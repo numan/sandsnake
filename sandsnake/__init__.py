@@ -15,7 +15,7 @@ KIND, either express or implied.  See the License for the
 specific language governing permissions and limitations
 under the License.
 """
-from analytics.utils import import_string
+from sandsnake.utils import import_string
 
 try:
     VERSION = __import__('pkg_resources') \
@@ -24,16 +24,16 @@ except Exception, e:
     VERSION = 'unknown'
 
 
-def create_analytic_backend(settings):
+def create_sandsnake_backend(settings):
     """
-    Creates a new Analytics backend from the settings
+    Creates a new sandsnake backend from the settings
 
     :param settings: Dictionary of settings for the analytics backend
     :returns: A backend object implementing the analytics api
 
     >>>
-    >>> analytics = create_analytic({
-    >>>     'backend': 'analytics.backends.redis.Redis',
+    >>> analytics = create_sandsnake_backend({
+    >>>     'backend': 'sandsnake.backends.redis.Redis',
     >>>     'settings': {
     >>>         'defaults': {
     >>>             'host': 'localhost',

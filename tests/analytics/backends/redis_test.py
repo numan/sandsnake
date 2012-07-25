@@ -2,16 +2,15 @@ from __future__ import absolute_import
 
 from nose.tools import ok_, eq_, raises, set_trace
 
-from analytics import create_analytic_backend
+from sandsnake import create_sandsnake_backend
 
 import datetime
-import itertools
 
 
 class TestRedisAnalyticsBackend(object):
     def setUp(self):
-        self._backend = create_analytic_backend({
-            "backend": "analytics.backends.redis.Redis",
+        self._backend = create_sandsnake_backend({
+            "backend": "sandsnake.backends.redis.Redis",
             "settings": {
                 "hosts": [{"db": 3}, {"db": 4}, {"db": 5}]
             },
@@ -25,479 +24,185 @@ class TestRedisAnalyticsBackend(object):
     def tearDown(self):
         self._redis_backend.flushdb()
 
-    def test_track_metric(self):
-        user_id = 1234
-        metric = "badge:25"
-        datetime_obj = datetime.datetime(year=2012, month=1, day=1)
+    def test_get_timestamp(self):
+        jan_first = datetime.datetime(2012, 01, 01, 12, 0, 0, 0)
+        eq_(13254192000000L, self._backend._get_timestamp(jan_first))
 
-        ok_(self._backend.track_metric(user_id, metric, datetime_obj))
+    def _setup_basic_stream(self):
+        self.obj = "streams"
+        self.stream_name = "profile_stream"
+        self.activity_name = "activity1234"
+        published = datetime.datetime.utcnow()
+        self.timestamp = self._backend._get_timestamp(published)
 
-        keys = self._redis_backend.keys()
-        #flatten list to lists incase we have a cluster of redis servers
-        keys = list(itertools.chain.from_iterable(keys))
-        keys.sort()
-        eq_(len(keys), 3)
+        self._backend.add_to_stream(self.obj, self.stream_name, self.activity_name, published=published)
 
-        daily = self._redis_backend.hgetall(keys[2])
-        weekly = self._redis_backend.hgetall(keys[1])
-        aggregated = self._redis_backend.get("analy:%s:count:%s" % (user_id, metric, ))
+    def test_parse_date(self):
+        datetime_string = "2012-01-01T12:00:00"
+        datetime_obj = datetime.datetime(2012, 01, 01, 12, 0, 0, 0)
+        invalid_datetime = "qwerty"
 
-        #each metric should be at 1
-        [eq_(int(value), 1) for value in daily.values()]
-        [eq_(int(value), 1) for value in weekly.values()]
-        eq_(int(aggregated), 1)
+        now = datetime.datetime.utcnow()
 
-        #each hash should only have one key
-        eq_(len(daily.keys()), 1)
-        eq_(len(weekly.keys()), 2)
+        eq_(datetime.datetime(2012, 1, 1, 12, 0, 0, 0), self._backend._parse_date(datetime_string))
+        eq_(datetime.datetime(2012, 1, 1, 12, 0, 0, 0), self._backend._parse_date(datetime_obj))
+        ok_(now < self._backend._parse_date(invalid_datetime))  # should return the current datetime
+        ok_(now < self._backend._parse_date())  # Should return the current datetime
 
-        #try incrementing by the non default value
-        ok_(self._backend.track_metric(user_id, metric, datetime_obj, inc_amt=3))
+    def test_listify(self):
+        single_stream = 'my_stream'
+        many_streams = ['second_stream', 'third_stream']
 
-        keys = self._redis_backend.keys()
-        #flatten list to lists incase we have a cluster of redis servers
-        keys = list(itertools.chain.from_iterable(keys))
-        keys.sort()
-        eq_(len(keys), 3)
+        eq_([single_stream], self._backend._listify(single_stream))
+        eq_(many_streams, self._backend._listify(many_streams))
 
-        daily = self._redis_backend.hgetall(keys[2])
-        weekly = self._redis_backend.hgetall(keys[1])
-        aggregated = self._redis_backend.get("analy:%s:count:%s" % (user_id, metric, ))
+    def test_get_stream_collection_name(self):
+        obj = "user:1234"
+        eq_("%(prefix)s%(obj)s:streams" % {'prefix': self._backend._prefix, 'obj': obj}, self._backend._get_stream_collection_name(obj))
 
-        #each metric should be at 4
-        [eq_(int(value), 4) for value in daily.values()]
-        [eq_(int(value), 4) for value in weekly.values()]
-        eq_(int(aggregated), 4)
+    def test_get_stream_name(self):
+        obj = "user:1234"
+        stream_name = "profile_stream"
+        eq_("%(prefix)sobj:%(obj)s:stream:%(stream)s" % {'prefix': self._backend._prefix, 'obj': obj, 'stream': stream_name}, self._backend._get_stream_name(obj, stream_name))
 
-    def test_track_count(self):
-        user_id = 1234
-        metric = "badge:25"
+    def test_get_stream_name_collection_name_dont_clash(self):
+        obj = "streams"
+        stream_name = "profile_stream"
+        ok_(self._backend._get_stream_collection_name(obj) != self._backend._get_stream_name(obj, stream_name))
 
-        ok_(self._backend.track_count(user_id, metric))
+    def test_add_to_stream(self):
+        obj = "streams"
+        stream_name = "profile_stream"
+        activity_name = "activity1234"
+        published = datetime.datetime.utcnow()
+        timestamp = self._backend._get_timestamp(published)
 
-        keys = self._redis_backend.keys()
-        #flatten list to lists incase we have a cluster of redis servers
-        keys = list(itertools.chain.from_iterable(keys))
-        eq_(len(keys), 1)
+        self._backend.add_to_stream(obj, stream_name, activity_name, published=published)
 
-        aggregated = self._redis_backend.get("analy:%s:count:%s" % (user_id, metric, ))
+        eq_(self._redis_backend.zcard(self._backend._get_stream_name(obj, stream_name)), 1)
+        eq_(self._redis_backend.scard(self._backend._get_stream_collection_name(obj)), 1)
+        eq_(self._redis_backend.zrange(self._backend._get_stream_name(obj, stream_name), 0, -1, withscores=True), [(activity_name, timestamp)])
 
-        #count should be at 1
-        eq_(int(aggregated), 1)
+    def test_add_to_multiple_streams_at_the_same_time(self):
+        obj = "streams"
+        stream_names = ["profile_stream", "group_stream"]
+        activity_name = "activity1234"
+        published = datetime.datetime.utcnow()
 
-        #try incrementing by the non default value
-        ok_(self._backend.track_count(user_id, metric, inc_amt=3))
+        self._backend.add_to_stream(obj, stream_names, activity_name, published=published)
 
-        keys = self._redis_backend.keys()
-        #flatten list to lists incase we have a cluster of redis servers
-        keys = list(itertools.chain.from_iterable(keys))
-        eq_(len(keys), 1)
+        eq_(self._redis_backend.zcard(self._backend._get_stream_name(obj, stream_names[0])), 1)
+        eq_(self._redis_backend.zcard(self._backend._get_stream_name(obj, stream_names[1])), 1)
+        eq_(self._redis_backend.scard(self._backend._get_stream_collection_name(obj)), 2)
 
-        aggregated = self._redis_backend.get("analy:%s:count:%s" % (user_id, metric, ))
-
-        #count should be at 4
-        eq_(int(aggregated), 4)
+    def test_delete_from_stream(self):
+        self._setup_basic_stream()
 
-    def test_get_count(self):
-        user_id = 1234
-        metric = "badge:25"
-
-        ok_(self._backend.track_count(user_id, metric))
-
-        keys = self._redis_backend.keys()
-        #flatten list to lists incase we have a cluster of redis servers
-        keys = list(itertools.chain.from_iterable(keys))
-        eq_(len(keys), 1)
-
-        count = self._backend.get_count(user_id, metric)
-
-        #count should be at 1
-        eq_(count, 1)
-
-        #try incrementing by the non default value
-        ok_(self._backend.track_count(user_id, metric, inc_amt=3))
-
-        keys = self._redis_backend.keys()
-        #flatten list to lists incase we have a cluster of redis servers
-        keys = list(itertools.chain.from_iterable(keys))
-        eq_(len(keys), 1)
-
-        count = self._backend.get_count(user_id, metric)
-
-        #count should be at 4
-        eq_(count, 4)
-
-    def test_get_count_invalid_key(self):
-        user_id = 1234
-        metric = "badge:25"
-
-        keys = self._redis_backend.keys()
-        #flatten list to lists incase we have a cluster of redis servers
-        keys = list(itertools.chain.from_iterable(keys))
-        eq_(len(keys), 0)
-
-        count = self._backend.get_count(user_id, metric)
-
-        #count should be at 0
-        eq_(count, 0)
-
-    def test_get_counts(self):
-        user_id = 1234
-        metric = "badge:25"
-        metric2 = "badge:26"
-        does_not_exist = "key:does:not:exist"
-
-        ok_(self._backend.track_count(user_id, metric))
-
-        keys = self._redis_backend.keys()
-        #flatten list to lists incase we have a cluster of redis servers
-        keys = list(itertools.chain.from_iterable(keys))
-        eq_(len(keys), 1)
-
-        #try incrementing by the non default value
-        ok_(self._backend.track_count(user_id, metric2, inc_amt=3))
-
-        keys = self._redis_backend.keys()
-        #flatten list to lists incase we have a cluster of redis servers
-        keys = list(itertools.chain.from_iterable(keys))
-        eq_(len(keys), 2)
-
-        counts = self._backend.get_counts([(user_id, metric,), (user_id, metric2,), (user_id, does_not_exist,)])
-
-        #check the counts for each of the metrics
-        eq_(len(counts), 3)
-        eq_(counts[0], 1)
-        eq_(counts[1], 3)
-        eq_(counts[2], 0)
-
-    def test_get_closest_week(self):
-        """
-        Gets the closest Monday to the provided date.
-        """
-        date_april_1 = datetime.date(year=2012, month=4, day=1)
-        date_april_2 = datetime.date(year=2012, month=4, day=2)
-        date_april_7 = datetime.date(year=2012, month=4, day=7)
-        date_april_8 = datetime.date(year=2012, month=4, day=8)
-        date_april_9 = datetime.date(year=2012, month=4, day=9)
-
-        monday_march_26 = datetime.date(year=2012, month=3, day=26)
-        monday_april_2 = datetime.date(year=2012, month=4, day=2)
-        monday_april_9 = datetime.date(year=2012, month=4, day=9)
-
-        eq_(self._backend._get_closest_week(date_april_1), monday_march_26)
-        eq_(self._backend._get_closest_week(date_april_2), monday_april_2)
-        eq_(self._backend._get_closest_week(date_april_7), monday_april_2)
-        eq_(self._backend._get_closest_week(date_april_8), monday_april_2)
-        eq_(self._backend._get_closest_week(date_april_9), monday_april_9)
-
-    def test_metric_by_month_over_several_months(self):
-        user_id = 1234
-        metric = "badge:25"
-        from_date = datetime.date(year=2012, month=4, day=2)
-
-        ok_(self._backend.track_metric(user_id, metric, datetime.datetime(year=2012, month=4, day=5), inc_amt=2))
-        ok_(self._backend.track_metric(user_id, metric, datetime.datetime(year=2012, month=4, day=7), inc_amt=2))
-        ok_(self._backend.track_metric(user_id, metric, datetime.datetime(year=2012, month=4, day=9), inc_amt=2))
-        ok_(self._backend.track_metric(user_id, metric, datetime.datetime(year=2012, month=5, day=11), inc_amt=2))
-        ok_(self._backend.track_metric(user_id, metric, datetime.datetime(year=2012, month=6, day=18), inc_amt=3))
-        ok_(self._backend.track_metric(user_id, metric, datetime.datetime(year=2012, month=4, day=30)))
-
-        series, values = self._backend.get_metric_by_month(user_id, metric, from_date, limit=5)
-        eq_(len(series), 5)
-        eq_(values["2012-04-01"], 7)
-        eq_(values["2012-05-01"], 2)
-        eq_(values["2012-06-01"], 3)
-        eq_(values["2012-07-01"], 0)
-        eq_(values["2012-08-01"], 0)
-
-    def test_metric_by_month_over_several_months_crossing_year_boundry(self):
-        user_id = 1234
-        metric = "badge:25"
-        from_date = datetime.date(year=2011, month=12, day=1)
-
-        ok_(self._backend.track_metric(user_id, metric, datetime.datetime(year=2011, month=12, day=5), inc_amt=2))
-        ok_(self._backend.track_metric(user_id, metric, datetime.datetime(year=2011, month=12, day=8), inc_amt=2))
-        ok_(self._backend.track_metric(user_id, metric, datetime.datetime(year=2011, month=12, day=30), inc_amt=2))
-        ok_(self._backend.track_metric(user_id, metric, datetime.datetime(year=2012, month=1, day=1), inc_amt=2))
-        ok_(self._backend.track_metric(user_id, metric, datetime.datetime(year=2012, month=1, day=5), inc_amt=3))
-        ok_(self._backend.track_metric(user_id, metric, datetime.datetime(year=2012, month=4, day=7)))
-
-        series, values = self._backend.get_metric_by_month(user_id, metric, from_date, limit=6)
-        eq_(len(series), 6)
-        eq_(values["2011-12-01"], 6)
-        eq_(values["2012-01-01"], 5)
-        eq_(values["2012-02-01"], 0)
-        eq_(values["2012-03-01"], 0)
-        eq_(values["2012-04-01"], 1)
-        eq_(values["2012-05-01"], 0)
-
-    def test_metric_by_week_over_several_weeks(self):
-        user_id = 1234
-        metric = "badge:25"
-        from_date = datetime.date(year=2012, month=4, day=2)
-
-        ok_(self._backend.track_metric(user_id, metric, datetime.datetime(year=2012, month=4, day=5), inc_amt=2))
-        ok_(self._backend.track_metric(user_id, metric, datetime.datetime(year=2012, month=4, day=7), inc_amt=2))
-        ok_(self._backend.track_metric(user_id, metric, datetime.datetime(year=2012, month=4, day=9), inc_amt=2))
-        ok_(self._backend.track_metric(user_id, metric, datetime.datetime(year=2012, month=4, day=11), inc_amt=2))
-        ok_(self._backend.track_metric(user_id, metric, datetime.datetime(year=2012, month=4, day=18), inc_amt=3))
-        ok_(self._backend.track_metric(user_id, metric, datetime.datetime(year=2012, month=4, day=30)))
-
-        series, values = self._backend.get_metric_by_week(user_id, metric, from_date, limit=5)
-        eq_(len(series), 5)
-        eq_(values["2012-04-02"], 4)
-        eq_(values["2012-04-09"], 4)
-        eq_(values["2012-04-16"], 3)
-        eq_(values["2012-04-23"], 0)
-        eq_(values["2012-04-30"], 1)
-
-    def test_metric_by_week_over_several_weeks_crossing_year_boundry(self):
-        user_id = 1234
-        metric = "badge:25"
-        from_date = datetime.date(year=2011, month=12, day=1)
-
-        ok_(self._backend.track_metric(user_id, metric, datetime.datetime(year=2011, month=12, day=5), inc_amt=2))
-        ok_(self._backend.track_metric(user_id, metric, datetime.datetime(year=2011, month=12, day=8), inc_amt=2))
-        ok_(self._backend.track_metric(user_id, metric, datetime.datetime(year=2011, month=12, day=30), inc_amt=2))
-        ok_(self._backend.track_metric(user_id, metric, datetime.datetime(year=2012, month=1, day=1), inc_amt=2))
-        ok_(self._backend.track_metric(user_id, metric, datetime.datetime(year=2012, month=1, day=5), inc_amt=3))
-        ok_(self._backend.track_metric(user_id, metric, datetime.datetime(year=2012, month=4, day=7)))
-
-        series, values = self._backend.get_metric_by_week(user_id, metric, from_date, limit=6)
-        eq_(len(series), 6)
-        eq_(values["2011-11-28"], 0)
-        eq_(values["2011-12-05"], 4)
-        eq_(values["2011-12-12"], 0)
-        eq_(values["2011-12-19"], 0)
-        eq_(values["2011-12-26"], 4)
-        eq_(values["2012-01-02"], 3)
-
-    def test_get_weekly_date_range(self):
-        date = datetime.date(year=2011, month=11, day=1)
-
-        result = self._backend._get_weekly_date_range(date, datetime.timedelta(weeks=12))
-        eq_(len(result), 2)
-        eq_(result[0], datetime.date(year=2011, month=11, day=1))
-        eq_(result[1], datetime.date(year=2012, month=1, day=1))
-
-    def test_get_daily_date_range(self):
-        date = datetime.date(year=2011, month=11, day=15)
-
-        result = self._backend._get_daily_date_range(date, datetime.timedelta(days=30))
-        eq_(len(result), 2)
-        eq_(result[0], datetime.date(year=2011, month=11, day=15))
-        eq_(result[1], datetime.date(year=2011, month=12, day=1))
-
-    def test_get_daily_date_range_spans_month_and_year(self):
-        date = datetime.date(year=2011, month=11, day=15)
-
-        result = self._backend._get_daily_date_range(date, datetime.timedelta(days=65))
-        eq_(len(result), 3)
-        eq_(result[0], datetime.date(year=2011, month=11, day=15))
-        eq_(result[1], datetime.date(year=2011, month=12, day=1))
-        eq_(result[2], datetime.date(year=2012, month=1, day=1))
-
-    def test_metric_by_day(self):
-        date = datetime.date(year=2011, month=12, day=1)
-        user_id = "user1234"
-        metric = "badges:21"
-
-        #track some metrics
-        ok_(self._backend.track_metric(user_id, metric, datetime.datetime(year=2011, month=12, day=5), inc_amt=2))
-        ok_(self._backend.track_metric(user_id, metric, datetime.datetime(year=2011, month=12, day=8), inc_amt=3))
-        ok_(self._backend.track_metric(user_id, metric, datetime.datetime(year=2011, month=12, day=30), inc_amt=5))
-
-        series, values = self._backend.get_metric_by_day(user_id, metric, date, 30)
-
-        eq_(len(series), 30)
-        eq_(len(values.keys()), 30)
-        eq_(values["2011-12-05"], 2)
-        eq_(values["2011-12-08"], 3)
-        eq_(values["2011-12-30"], 5)
-
-    def test_metric_by_day_spans_month_year_boundry(self):
-        date = datetime.date(year=2011, month=12, day=1)
-        user_id = "user1234"
-        metric = "badges:21"
-
-        #track some metrics
-        ok_(self._backend.track_metric(user_id, metric, datetime.datetime(year=2011, month=12, day=5), inc_amt=2))
-        ok_(self._backend.track_metric(user_id, metric, datetime.datetime(year=2011, month=12, day=8), inc_amt=3))
-        ok_(self._backend.track_metric(user_id, metric, datetime.datetime(year=2012, month=1, day=1), inc_amt=5))
-
-        series, values = self._backend.get_metric_by_day(user_id, metric, date, 35)
-
-        eq_(len(series), 35)
-        eq_(len(values.keys()), 35)
-        eq_(values["2011-12-05"], 2)
-        eq_(values["2011-12-08"], 3)
-        eq_(values["2012-01-01"], 5)
-
-    @raises(Exception)
-    def test_get_metrics_invalid_args(self):
-        date = datetime.date(year=2011, month=12, day=1)
-
-        self._backend.get_metrics([], date, group_by="leapyear")
-
-    def test_get_metrics_by_day(self):
-        date = datetime.date(year=2011, month=12, day=1)
-        user_id = "user1234"
-        metric = "badges:21"
-        metric2 = "badge:22"
-
-        #track some metrics
-        ok_(self._backend.track_metric(user_id, metric, datetime.datetime(year=2011, month=12, day=5), inc_amt=2))
-        ok_(self._backend.track_metric(user_id, metric, datetime.datetime(year=2011, month=12, day=8), inc_amt=3))
-        ok_(self._backend.track_metric(user_id, metric, datetime.datetime(year=2011, month=12, day=30), inc_amt=5))
-        ok_(self._backend.track_metric(user_id, metric2, datetime.datetime(year=2011, month=12, day=5), inc_amt=3))
-        ok_(self._backend.track_metric(user_id, metric2, datetime.datetime(year=2011, month=12, day=8), inc_amt=3))
-        ok_(self._backend.track_metric(user_id, metric2, datetime.datetime(year=2011, month=12, day=30), inc_amt=5))
-
-        results = self._backend.get_metrics([(user_id, metric,), (user_id, metric2,)], date, limit=30, group_by="day")
-
-        #metric
-        eq_(len(results[0][0]), 30)
-        eq_(len(results[0][1].keys()), 30)
-        eq_(results[0][1]["2011-12-05"], 2)
-        eq_(results[0][1]["2011-12-08"], 3)
-        eq_(results[0][1]["2011-12-30"], 5)
-
-        #metric 2
-        eq_(len(results[1][0]), 30)
-        eq_(len(results[1][1].keys()), 30)
-        eq_(results[1][1]["2011-12-05"], 3)
-        eq_(results[1][1]["2011-12-08"], 3)
-        eq_(results[1][1]["2011-12-30"], 5)
-
-    def test_get_metrics_by_week(self):
-        user_id = 1234
-        metric = "badge:25"
-        metric2 = "badge:26"
-        from_date = datetime.date(year=2012, month=4, day=2)
-
-        ok_(self._backend.track_metric(user_id, metric, datetime.datetime(year=2012, month=4, day=5), inc_amt=2))
-        ok_(self._backend.track_metric(user_id, metric, datetime.datetime(year=2012, month=4, day=7), inc_amt=2))
-        ok_(self._backend.track_metric(user_id, metric, datetime.datetime(year=2012, month=4, day=9), inc_amt=2))
-        ok_(self._backend.track_metric(user_id, metric2, datetime.datetime(year=2012, month=4, day=11), inc_amt=2))
-        ok_(self._backend.track_metric(user_id, metric2, datetime.datetime(year=2012, month=4, day=18), inc_amt=3))
-        ok_(self._backend.track_metric(user_id, metric2, datetime.datetime(year=2012, month=4, day=30)))
-
-        results = self._backend.get_metrics([(user_id, metric,), (user_id, metric2)], from_date, limit=5, group_by="week")
-
-        #metric 1
-        eq_(len(results[0][0]), 5)
-        eq_(results[0][1]["2012-04-02"], 4)
-        eq_(results[0][1]["2012-04-09"], 2)
-        eq_(results[0][1]["2012-04-16"], 0)
-        eq_(results[0][1]["2012-04-23"], 0)
-        eq_(results[0][1]["2012-04-30"], 0)
-
-        #metric 2
-        eq_(len(results[1][0]), 5)
-        eq_(results[1][1]["2012-04-02"], 0)
-        eq_(results[1][1]["2012-04-09"], 2)
-        eq_(results[1][1]["2012-04-16"], 3)
-        eq_(results[1][1]["2012-04-23"], 0)
-        eq_(results[1][1]["2012-04-30"], 1)
-
-    def test_track_metric_for_multi_users_at_the_same_time(self):
-        user_id = 1234
-        user_id2 = "user:5678"
-        metric = "badge:25"
-        from_date = datetime.date(year=2012, month=4, day=2)
-
-        ok_(self._backend.track_metric([user_id, user_id2], metric, datetime.datetime(year=2012, month=4, day=5), inc_amt=2))
-        ok_(self._backend.track_metric([user_id, user_id2], metric, datetime.datetime(year=2012, month=4, day=7), inc_amt=2))
-        ok_(self._backend.track_metric([user_id, user_id2], metric, datetime.datetime(year=2012, month=4, day=9), inc_amt=2))
-        ok_(self._backend.track_metric([user_id, user_id2], metric, datetime.datetime(year=2012, month=4, day=11), inc_amt=2))
-        ok_(self._backend.track_metric([user_id, user_id2], metric, datetime.datetime(year=2012, month=4, day=18), inc_amt=3))
-        ok_(self._backend.track_metric([user_id, user_id2], metric, datetime.datetime(year=2012, month=4, day=30)))
-
-        series, values = self._backend.get_metric_by_week(user_id, metric, from_date, limit=5)
-        eq_(len(series), 5)
-        eq_(values["2012-04-02"], 4)
-        eq_(values["2012-04-09"], 4)
-        eq_(values["2012-04-16"], 3)
-        eq_(values["2012-04-23"], 0)
-        eq_(values["2012-04-30"], 1)
-
-        series, values = self._backend.get_metric_by_week(user_id2, metric, from_date, limit=5)
-        eq_(len(series), 5)
-        eq_(values["2012-04-02"], 4)
-        eq_(values["2012-04-09"], 4)
-        eq_(values["2012-04-16"], 3)
-        eq_(values["2012-04-23"], 0)
-        eq_(values["2012-04-30"], 1)
-
-    def test_track_metric_multiple_metrics_at_the_same_time(self):
-        date = datetime.date(year=2011, month=12, day=1)
-        user_id = "user1234"
-        metric = "badges:21"
-        metric2 = "badge:22"
-
-        #track some metrics
-        ok_(self._backend.track_metric(user_id, [metric, metric2], datetime.datetime(year=2011, month=12, day=5), inc_amt=2))
-        ok_(self._backend.track_metric(user_id, [metric, metric2], datetime.datetime(year=2011, month=12, day=8), inc_amt=3))
-        ok_(self._backend.track_metric(user_id, [metric, metric2], datetime.datetime(year=2011, month=12, day=30), inc_amt=5))
-
-        results = self._backend.get_metrics([(user_id, metric,), (user_id, metric2,)], date, limit=30, group_by="day")
-
-        #metric
-        eq_(len(results[0][0]), 30)
-        eq_(len(results[0][1].keys()), 30)
-        eq_(results[0][1]["2011-12-05"], 2)
-        eq_(results[0][1]["2011-12-08"], 3)
-        eq_(results[0][1]["2011-12-30"], 5)
-
-        #metric 2
-        eq_(len(results[1][0]), 30)
-        eq_(len(results[1][1].keys()), 30)
-        eq_(results[1][1]["2011-12-05"], 2)
-        eq_(results[1][1]["2011-12-08"], 3)
-        eq_(results[1][1]["2011-12-30"], 5)
-
-    def test_track_multi_metrics_for_multi_users_at_the_same_time(self):
-        user_id = 1234
-        user_id2 = "user:5678"
-        metric = "metric1"
-        metric2 = "metric2"
-        from_date = datetime.date(year=2012, month=4, day=2)
-
-        ok_(self._backend.track_metric([user_id, user_id2], [metric, metric2], datetime.datetime(year=2012, month=4, day=5), inc_amt=2))
-        ok_(self._backend.track_metric([user_id, user_id2], [metric, metric2], datetime.datetime(year=2012, month=4, day=7), inc_amt=2))
-        ok_(self._backend.track_metric([user_id, user_id2], [metric, metric2], datetime.datetime(year=2012, month=4, day=9), inc_amt=2))
-        ok_(self._backend.track_metric([user_id, user_id2], [metric, metric2], datetime.datetime(year=2012, month=4, day=11), inc_amt=2))
-        ok_(self._backend.track_metric([user_id, user_id2], [metric, metric2], datetime.datetime(year=2012, month=4, day=18), inc_amt=3))
-        ok_(self._backend.track_metric([user_id, user_id2], [metric, metric2], datetime.datetime(year=2012, month=4, day=30)))
-
-        series, values = self._backend.get_metric_by_week(user_id, metric, from_date, limit=5)
-        eq_(len(series), 5)
-        eq_(values["2012-04-02"], 4)
-        eq_(values["2012-04-09"], 4)
-        eq_(values["2012-04-16"], 3)
-        eq_(values["2012-04-23"], 0)
-        eq_(values["2012-04-30"], 1)
-
-        series, values = self._backend.get_metric_by_week(user_id2, metric, from_date, limit=5)
-        eq_(len(series), 5)
-        eq_(values["2012-04-02"], 4)
-        eq_(values["2012-04-09"], 4)
-        eq_(values["2012-04-16"], 3)
-        eq_(values["2012-04-23"], 0)
-        eq_(values["2012-04-30"], 1)
-
-        series, values = self._backend.get_metric_by_week(user_id, metric2, from_date, limit=5)
-        eq_(len(series), 5)
-        eq_(values["2012-04-02"], 4)
-        eq_(values["2012-04-09"], 4)
-        eq_(values["2012-04-16"], 3)
-        eq_(values["2012-04-23"], 0)
-        eq_(values["2012-04-30"], 1)
-
-        series, values = self._backend.get_metric_by_week(user_id2, metric2, from_date, limit=5)
-        eq_(len(series), 5)
-        eq_(values["2012-04-02"], 4)
-        eq_(values["2012-04-09"], 4)
-        eq_(values["2012-04-16"], 3)
-        eq_(values["2012-04-23"], 0)
-        eq_(values["2012-04-30"], 1)
+        eq_(self._redis_backend.zcard(self._backend._get_stream_name(self.obj, self.stream_name)), 1)
+        eq_(self._redis_backend.scard(self._backend._get_stream_collection_name(self.obj)), 1)
+        eq_(self._redis_backend.zrange(self._backend._get_stream_name(self.obj, self.stream_name), 0, -1, withscores=True), [(self.activity_name, self.timestamp)])
+
+        #now delete from the stream:
+        self._backend.delete_from_stream(self.obj, self.stream_name, self.activity_name)
+
+        eq_(self._redis_backend.zcard(self._backend._get_stream_name(self.obj, self.stream_name)), 0)
+        eq_(self._redis_backend.scard(self._backend._get_stream_collection_name(self.obj)), 1, "we don't get rid of the stream unless the user explicitly asks to delete it.")
+
+    def test_delete_stream(self):
+        self._setup_basic_stream()
+
+        eq_(self._redis_backend.zcard(self._backend._get_stream_name(self.obj, self.stream_name)), 1)
+        eq_(self._redis_backend.scard(self._backend._get_stream_collection_name(self.obj)), 1)
+
+        self._backend.delete_stream(self.obj, self.stream_name)
+
+        ok_(not self._redis_backend.exists(self._backend._get_stream_name(self.obj, self.stream_name)))
+        ok_(not self._redis_backend.exists(self._backend._get_stream_collection_name(self.obj)))
+
+    def test_delete_stream_multiple_streams_at_the_same_time(self):
+        obj = "streams"
+        stream_names = ["profile_stream", "group_stream"]
+        activity_name = "activity1234"
+        published = datetime.datetime.utcnow()
+
+        self._backend.add_to_stream(obj, stream_names, activity_name, published=published)
+
+        eq_(self._redis_backend.zcard(self._backend._get_stream_name(obj, stream_names[0])), 1)
+        eq_(self._redis_backend.zcard(self._backend._get_stream_name(obj, stream_names[1])), 1)
+        eq_(self._redis_backend.scard(self._backend._get_stream_collection_name(obj)), 2)
+
+        self._backend.delete_stream(obj, stream_names)
+
+        ok_(not self._redis_backend.exists(self._backend._get_stream_name(obj, stream_names[0])))
+        ok_(not self._redis_backend.exists(self._backend._get_stream_name(obj, stream_names[1])))
+        ok_(not self._redis_backend.exists(self._backend._get_stream_collection_name(obj)))
+
+    def test_delete_stream_multiple_streams_some_not_deleted(self):
+        obj = "streams"
+        stream_names = ["profile_stream", "group_stream"]
+        activity_name = "activity1234"
+        published = datetime.datetime.utcnow()
+
+        self._backend.add_to_stream(obj, stream_names, activity_name, published=published)
+
+        eq_(self._redis_backend.zcard(self._backend._get_stream_name(obj, stream_names[0])), 1)
+        eq_(self._redis_backend.zcard(self._backend._get_stream_name(obj, stream_names[1])), 1)
+        eq_(self._redis_backend.scard(self._backend._get_stream_collection_name(obj)), 2)
+
+        self._backend.delete_stream(obj, stream_names[0])
+
+        ok_(not self._redis_backend.exists(self._backend._get_stream_name(obj, stream_names[0])))
+        ok_(self._redis_backend.exists(self._backend._get_stream_name(obj, stream_names[1])))
+        ok_(self._redis_backend.exists(self._backend._get_stream_collection_name(obj)))
+        eq_(self._redis_backend.scard(self._backend._get_stream_collection_name(obj)), 1)
+
+    def test_delete_stream_stream_object_doesnt_exist(self):
+        #fail silently if the streams/objects don't exist
+        self._backend.delete_stream("non existing", "also does not exist")
+
+    def test_delete_stream_stream_doesnt_exist(self):
+
+        self._setup_basic_stream()
+
+        eq_(self._redis_backend.zcard(self._backend._get_stream_name(self.obj, self.stream_name)), 1)
+        eq_(self._redis_backend.scard(self._backend._get_stream_collection_name(self.obj)), 1)
+
+        self._backend.delete_stream(self.obj, "this doesn't really exist")
+
+        eq_(self._redis_backend.zcard(self._backend._get_stream_name(self.obj, self.stream_name)), 1)
+        eq_(self._redis_backend.scard(self._backend._get_stream_collection_name(self.obj)), 1)
+
+    def test_get_stream_difference(self):
+        lhs_obj = "user:1"
+        lhs_stream_names = ["profile_stream", "group_stream"]
+        lhs_activities = [['a1', 'a2', 'a3'],  ['b1', 'b2', 'b3']]
+
+        rhs_obj = "user:2"
+        rhs_stream_names = ["profile_stream", "group_stream"]
+        rhs_activities = [['a4', 'a2', 'a3'], ['b1', 'b4', 'b3']]
+
+        #first stream
+        self._backend.add_to_stream(lhs_obj, lhs_stream_names[0], lhs_activities[0][0])
+        self._backend.add_to_stream(lhs_obj, lhs_stream_names[0], lhs_activities[0][1])
+        self._backend.add_to_stream(lhs_obj, lhs_stream_names[0], lhs_activities[0][2])
+
+        #second stream
+        self._backend.add_to_stream(lhs_obj, lhs_stream_names[1], lhs_activities[1][0])
+        self._backend.add_to_stream(lhs_obj, lhs_stream_names[1], lhs_activities[1][1])
+        self._backend.add_to_stream(lhs_obj, lhs_stream_names[1], lhs_activities[1][2])
+
+        #first stream
+        self._backend.add_to_stream(rhs_obj, rhs_stream_names[0], rhs_activities[0][0])
+        self._backend.add_to_stream(rhs_obj, rhs_stream_names[0], rhs_activities[0][1])
+        self._backend.add_to_stream(rhs_obj, rhs_stream_names[0], rhs_activities[0][2])
+
+        #second stream
+        self._backend.add_to_stream(rhs_obj, rhs_stream_names[1], rhs_activities[1][0])
+        self._backend.add_to_stream(rhs_obj, rhs_stream_names[1], rhs_activities[1][1])
+        self._backend.add_to_stream(rhs_obj, rhs_stream_names[1], rhs_activities[1][2])
+
+        eq_(self._backend.get_stream_union(lhs_obj, lhs_stream_names) - self._backend.get_stream_union(rhs_obj, rhs_stream_names), set(['a1', 'b2']))
+        eq_(self._backend.get_stream_union(lhs_obj, lhs_stream_names[0]) - self._backend.get_stream_union(rhs_obj, rhs_stream_names[1]), set(['a1', 'a2', 'a3']))
+        eq_(self._backend.get_stream_union(lhs_obj, lhs_stream_names[0]) - self._backend.get_stream_union(rhs_obj, rhs_stream_names[0]), set(['a1']))
+
+
