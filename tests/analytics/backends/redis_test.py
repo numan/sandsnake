@@ -204,5 +204,3 @@ class TestRedisAnalyticsBackend(object):
         eq_(self._backend.get_stream_union(lhs_obj, lhs_stream_names) - self._backend.get_stream_union(rhs_obj, rhs_stream_names), set(['a1', 'b2']))
         eq_(self._backend.get_stream_union(lhs_obj, lhs_stream_names[0]) - self._backend.get_stream_union(rhs_obj, rhs_stream_names[1]), set(['a1', 'a2', 'a3']))
         eq_(self._backend.get_stream_union(lhs_obj, lhs_stream_names[0]) - self._backend.get_stream_union(rhs_obj, rhs_stream_names[0]), set(['a1']))
-
-
