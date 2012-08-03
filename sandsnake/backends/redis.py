@@ -101,7 +101,7 @@ class Redis(BaseSunspearBackend):
             for stream in streams:
                 stream_name = self._get_stream_name(obj, stream)
                 streams_removed.append(stream_name)
-                conn.zrem(streams_removed, activity)
+                conn.zrem(stream_name, activity)
 
         self._post_delete_from_stream(streams_removed, activity)
 
