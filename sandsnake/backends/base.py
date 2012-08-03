@@ -17,7 +17,7 @@ under the License.
 """
 
 
-class BaseAnalyticsBackend(object):
+class BaseSunspearBackend(object):
     _backend = None
 
     def get_backend(self):

@@ -3,6 +3,7 @@ from __future__ import absolute_import
 from nose.tools import ok_, eq_, raises, set_trace
 
 from sandsnake import create_sandsnake_backend
+from sandsnake.exceptions import SandsnakeValidationException
 
 import datetime
 
@@ -204,3 +205,60 @@ class TestRedisAnalyticsBackend(object):
         eq_(self._backend.get_stream_union(lhs_obj, lhs_stream_names) - self._backend.get_stream_union(rhs_obj, rhs_stream_names), set(['a1', 'b2']))
         eq_(self._backend.get_stream_union(lhs_obj, lhs_stream_names[0]) - self._backend.get_stream_union(rhs_obj, rhs_stream_names[1]), set(['a1', 'a2', 'a3']))
         eq_(self._backend.get_stream_union(lhs_obj, lhs_stream_names[0]) - self._backend.get_stream_union(rhs_obj, rhs_stream_names[0]), set(['a1']))
+
+    def test_get_stream_items(self):
+        published = datetime.datetime.now()
+        obj = "streams"
+        stream_name = "profile_stream"
+
+        for i in xrange(5):
+            self._backend.add_to_stream(obj, stream_name, "activity_after_" + str(i), published=published + datetime.timedelta(seconds=i))
+
+        for i in xrange(1, 3):
+            self._backend.add_to_stream(obj, stream_name, "activity_before_" + str(i), published=published - datetime.timedelta(seconds=i))
+
+        #get all activities after the marker
+        result = self._backend.get_stream_items(obj, stream_name, marker=published)
+
+        eq_(len(result), 3)
+        eq_(["activity_before_" + str(i) for i in xrange(2, 0, -1)] + ['activity_after_0'], result)
+
+        #get all activities before the marker
+        result = self._backend.get_stream_items(obj, stream_name, marker=published, after=True)
+
+        eq_(len(result), 5)
+        eq_(["activity_after_" + str(i) for i in xrange(5)], result)
+
+    def test_get_stream_items_limit(self):
+        published = datetime.datetime.now()
+        obj = "streams"
+        stream_name = "profile_stream"
+
+        for i in xrange(5):
+            self._backend.add_to_stream(obj, stream_name, "activity_after_" + str(i), published=published + datetime.timedelta(seconds=i))
+
+        for i in xrange(1, 3):
+            self._backend.add_to_stream(obj, stream_name, "activity_before_" + str(i), published=published - datetime.timedelta(seconds=i))
+
+        #get all activities after the marker
+        result = self._backend.get_stream_items(obj, stream_name, marker=published, limit=2)
+
+        eq_(len(result), 2)
+        eq_(['activity_before_1', 'activity_after_0'], result)
+
+        #get all activities before the marker
+        result = self._backend.get_stream_items(obj, stream_name, marker=published, after=True, limit=2)
+
+        eq_(len(result), 2)
+        eq_(["activity_after_" + str(i) for i in xrange(2)], result)
+
+    @raises(SandsnakeValidationException)
+    def test_get_stream_items_marker_required(self):
+        obj = "streams"
+        stream_name = "profile_stream"
+
+        self._backend.get_stream_items(obj, stream_name)
+
+    def test_post_get_stream_items(self):
+        eq_(self._backend._post_get_stream_items([[('act:1', 1,), ('act:2', 2, ), ('act:3', 3)]],\
+            123, 20, False), [['act:1', 'act:2', 'act:3']])
