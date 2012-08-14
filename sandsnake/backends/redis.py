@@ -81,7 +81,7 @@ class Redis(BaseSunspearBackend):
                 conn.zadd(stream_name, activity, timestamp)
                 conn.sadd(self._get_stream_collection_name(obj), stream)
 
-        self._post_add_to_stream(streams_added, activity, timestamp)
+        self._post_add_to_stream(obj, streams_added, activity, timestamp)
 
     def delete_from_stream(self, obj, stream_name, activity):
         """
@@ -103,7 +103,7 @@ class Redis(BaseSunspearBackend):
                 streams_removed.append(stream_name)
                 conn.zrem(stream_name, activity)
 
-        self._post_delete_from_stream(streams_removed, activity)
+        self._post_delete_from_stream(obj, streams_removed, activity)
 
     def delete_stream(self, obj, stream_name):
         """
@@ -128,7 +128,7 @@ class Redis(BaseSunspearBackend):
         if self._backend.scard(self._get_stream_collection_name(obj)) == 0:
             self._backend.delete(self._get_stream_collection_name(obj))
 
-        self._post_delete_stream(streams_removed)
+        self._post_delete_stream(obj, streams_removed)
 
     def get_stream_items(self, obj, stream_name, marker=None, limit=30, after=False, **kwargs):
         """
@@ -158,13 +158,10 @@ class Redis(BaseSunspearBackend):
             for stream in streams:
                 if after:
                     results.append(conn.zrangebyscore(self._get_stream_name(obj, stream), timestamp, "+inf", start=0, num=limit, withscores=True, score_cast_func=long))
-        if not after:
-            for stream in streams:
-                closest_member = self._backend.zrangebyscore(self._get_stream_name(obj, stream), timestamp, "+inf", start=0, num=1)
-                rank = self._backend.zrank(self._get_stream_name(obj, stream), closest_member[0])
-                results.append(self._backend.zrange(self._get_stream_name(obj, stream), rank - limit + 1, rank, withscores=True, score_cast_func=long))
+                else:
+                    results.append(conn.zrevrangebyscore(self._get_stream_name(obj, stream), timestamp, "-inf", start=0, num=limit, withscores=True, score_cast_func=long))
 
-        results = self._post_get_stream_items(results, marker, limit, after, **kwargs)
+        results = self._post_get_stream_items(results, obj, stream_name, marker, limit, after, **kwargs)
 
         if len(results) == 1:
             return results[0]
@@ -183,19 +180,32 @@ class Redis(BaseSunspearBackend):
 
         return self._get_set_union(stream_names)[0]
 
-    def _post_get_stream_items(self, results, marker, limit, after, **kwargs):
+    def _post_get_stream_items(self, results, obj, stream_name, marker, limit, after, **kwargs):
         """
         Returns a list of activities after processing it.
+
+        :type obj: string
+        :param obj: string representation of the object for who the stream belongs to
+        :type stream_name: string or list of strings
+        :param stream_name: the name of the stream(s) you want to delete
+        :type marker: string or datetime representing a date and a time
+        :param marker: the starting point to retrieve activities from
+        :type limit: int
+        :param limit: the maximum number of activities to get
+        :type after: boolean
+        :param after: if ``True`` gets activities after ``marker`` otherwise gets it before ``marker``
         """
         processed_activities = []
         for result in results:
             processed_activities.append(map(lambda x: x[0], result))
         return processed_activities
 
-    def _post_add_to_stream(self, streams, activity, timestamp):
+    def _post_add_to_stream(self, obj, streams, activity, timestamp):
         """
         Called after an activity has been added to streams.
 
+        :type obj: string
+        :param obj: string representation of the object for who the stream belongs to
         :type streams: list
         :param streams: a list of ``streams`` to which the ``activity`` has been added
         :type activity: string
@@ -205,10 +215,12 @@ class Redis(BaseSunspearBackend):
         """
         pass
 
-    def _post_delete_from_stream(self, streams, activity):
+    def _post_delete_from_stream(self, obj, streams, activity):
         """
         Called after ``activity`` has been removed from ``streams``
 
+        :type obj: string
+        :param obj: string representation of the object for who the stream belongs to
         :type streams: list
         :param streams: a list of ``streams`` to which the ``activity`` has been added
         :type activity: string
@@ -216,10 +228,12 @@ class Redis(BaseSunspearBackend):
         """
         pass
 
-    def _post_delete_stream(self, streams):
+    def _post_delete_stream(self, obj, streams):
         """
         Called after ``streams`` have been deleted.
 
+        :type obj: string
+        :param obj: string representation of the object for who the stream belongs to
         :type streams: list
         :param streams: a list of ``streams`` to which the ``activity`` has been added
         """
@@ -227,7 +241,7 @@ class Redis(BaseSunspearBackend):
 
     def _get_set_union(self, *args):
         """
-        Given a set of stream sames (or any sorted sets), it stors the union of them in a new sorted set
+        Given a set of stream sames (or any sorted sets), it stores the union of them in a new sorted set
         and returns the key.
         """
         streams_list = list(args)
@@ -304,4 +318,85 @@ class Redis(BaseSunspearBackend):
 
 
 class RedisWithMarker(Redis):
-    pass
+    def _post_delete_stream(self, obj, streams):
+        """
+        Called after ``streams`` have been deleted.
+
+        :type obj: string
+        :param obj: string representation of the object for who the stream belongs to
+        :type streams: list
+        :param streams: a list of ``streams`` to which the ``activity`` has been added
+        """
+        super(RedisWithMarker, self)._post_delete_stream(obj, streams)
+        with self._backend.map() as conn:
+            for stream in streams:
+                conn.hdel(self._get_obj_markers_name(obj), self._get_stream_marker_name(stream))
+
+    def _post_add_to_stream(self, obj, streams, activity, timestamp):
+        """
+        Called after an activity has been added to streams. Updates the default marker for the stream
+
+        :type obj: string
+        :param obj: string representation of the object for who the stream belongs to
+        :type streams: list
+        :param streams: a list of ``streams`` to which the ``activity`` has been added
+        :type activity: string
+        :param activity: the name of the activity
+        :type timestamp: the score of the activity
+        :param timestamp: the score of the activity
+        """
+        super(RedisWithMarker, self)._post_add_to_stream(obj, streams, activity, timestamp)
+
+        default_markers_for_stream = {}
+        for stream in streams:
+            default_markers_for_stream[self._get_stream_marker_name(stream)] = timestamp
+        self._backend.hmset(self._get_obj_markers_name(obj), default_markers_for_stream)
+
+    def _post_get_stream_items(self, results, obj, stream_name, marker, limit, after, **kwargs):
+        """
+        Updates the default marker for streams.
+
+        :type results: list
+        :param results: list of activities for each of the stream
+        :type obj: string
+        :param obj: string representation of the object for who the stream belongs to
+        :type stream_name: string or list of strings
+        :param stream_name: the name of the stream(s) you want to delete
+        :type marker: string or datetime representing a date and a time
+        :param marker: the starting point to retrieve activities from
+        :type limit: int
+        :param limit: the maximum number of activities to get
+        :type after: boolean
+        :param after: if ``True`` gets activities after ``marker`` otherwise gets it before ``marker``
+        """
+        streams = self._listify(stream_name)
+
+        if after:
+            with self._backend.map() as conn:
+                for index, stream in enumerate(streams):
+                    if results[index]:
+                        conn.hset(self._get_obj_markers_name(obj),\
+                            self._get_stream_marker_name(stream), results[index][-1][1])
+
+        return super(RedisWithMarker, self)._post_get_stream_items(results, obj, stream_name, marker, limit, after, **kwargs)
+
+    def _get_obj_markers_name(self, obj):
+        """
+        Gets the unique name of the hash which stores the markers for this object
+
+        :type obj: string
+        :param obj: a unique string identifing the object
+        """
+        return "%(prefix)sobj:%(obj)s:markers" % {'prefix': self._prefix, 'obj': obj}
+
+    def _get_stream_marker_name(self, stream, marker_name='_ssdefault'):
+        """
+        Gets the unique name of the marker for the stream. The name of the default marker for the
+        stream is ``default``
+
+        :type stream: string
+        :param stream: a unique string identifing a stream
+        :type marker_name: string
+        :param marker_name: the name of the marker for this stream. The default name is ``default``
+        """
+        return "stream:%(stream)s:name:%(name)s" % {'stream': stream, 'name': marker_name}

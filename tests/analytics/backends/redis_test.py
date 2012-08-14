@@ -8,7 +8,7 @@ from sandsnake.exceptions import SandsnakeValidationException
 import datetime
 
 
-class TestRedisAnalyticsBackend(object):
+class TestRedisBackend(object):
     def setUp(self):
         self._backend = create_sandsnake_backend({
             "backend": "sandsnake.backends.redis.Redis",
@@ -221,7 +221,7 @@ class TestRedisAnalyticsBackend(object):
         result = self._backend.get_stream_items(obj, stream_name, marker=published)
 
         eq_(len(result), 3)
-        eq_(["activity_before_" + str(i) for i in xrange(2, 0, -1)] + ['activity_after_0'], result)
+        eq_(['activity_after_0'] + ["activity_before_" + str(i) for i in xrange(1, 3)], result)
 
         #get all activities before the marker
         result = self._backend.get_stream_items(obj, stream_name, marker=published, after=True)
@@ -244,7 +244,7 @@ class TestRedisAnalyticsBackend(object):
         result = self._backend.get_stream_items(obj, stream_name, marker=published, limit=2)
 
         eq_(len(result), 2)
-        eq_(['activity_before_1', 'activity_after_0'], result)
+        eq_(['activity_after_0', 'activity_before_1'], result)
 
         #get all activities before the marker
         result = self._backend.get_stream_items(obj, stream_name, marker=published, after=True, limit=2)
@@ -261,4 +261,138 @@ class TestRedisAnalyticsBackend(object):
 
     def test_post_get_stream_items(self):
         eq_(self._backend._post_get_stream_items([[('act:1', 1,), ('act:2', 2, ), ('act:3', 3)]],\
-            123, 20, False), [['act:1', 'act:2', 'act:3']])
+            "obj1", "stream1", 123, 20, False), [['act:1', 'act:2', 'act:3']])
+
+
+class TestRedisWithMarkerBackend(object):
+    def setUp(self):
+        self._backend = create_sandsnake_backend({
+            "backend": "sandsnake.backends.redis.RedisWithMarker",
+            "settings": {
+                "hosts": [{"db": 3}, {"db": 4}, {"db": 5}]
+            },
+        })
+
+        self._redis_backend = self._backend.get_backend()
+
+        #clear the redis database so we are in a consistent state
+        self._redis_backend.flushdb()
+
+    def tearDown(self):
+        self._redis_backend.flushdb()
+
+    def test_get_obj_markers_name(self):
+        obj = "user123"
+
+        eq_("%(prefix)sobj:%(obj)s:markers" % {'prefix': self._backend._prefix, 'obj': obj}, self._backend._get_obj_markers_name(obj))
+
+    def test_get_stream_marker_name_default_name(self):
+        stream = "userstream"
+
+        eq_("stream:%(stream)s:name:%(name)s" % {'stream': stream, 'name': '_ssdefault'}, self._backend._get_stream_marker_name(stream))
+
+    def test_get_stream_marker_name_custom_name(self):
+        stream = "userstream"
+        marker_name = "custom"
+
+        eq_("stream:%(stream)s:name:%(name)s" % {'stream': stream, 'name': marker_name}, self._backend._get_stream_marker_name(stream, marker_name=marker_name))
+
+    def test_add_to_stream_marker_updated(self):
+        obj = "streams"
+        stream_name = "profile_stream"
+        activity_name = "activity1234"
+        published = datetime.datetime.utcnow()
+        timestamp = self._backend._get_timestamp(published)
+
+        self._backend.add_to_stream(obj, stream_name, activity_name, published=published)
+
+        markers_hash = self._redis_backend.hgetall(self._backend._get_obj_markers_name(obj))
+        eq_({'stream:ssnake:obj:streams:stream:profile_stream:name:_ssdefault': str(timestamp)}, markers_hash)
+
+    def test_add_to_multiple_streams_at_the_same_time_markers_updated(self):
+        obj = "streams"
+        stream_names = ["profile_stream", "group_stream"]
+        activity_name = "activity1234"
+        published = datetime.datetime.utcnow()
+        timestamp = self._backend._get_timestamp(published)
+
+        self._backend.add_to_stream(obj, stream_names, activity_name, published=published)
+
+        markers_hash = self._redis_backend.hgetall(self._backend._get_obj_markers_name(obj))
+        eq_({'stream:ssnake:obj:streams:stream:profile_stream:name:_ssdefault': str(timestamp), \
+            'stream:ssnake:obj:streams:stream:group_stream:name:_ssdefault': str(timestamp)}, markers_hash)
+
+    def test_delete_stream_remove_marker(self):
+        obj = "streams"
+        stream_name = "profile_stream"
+        activity_name = "activity1234"
+        published = datetime.datetime.utcnow()
+        timestamp = self._backend._get_timestamp(published)
+
+        self._backend.add_to_stream(obj, stream_name, activity_name, published=published)
+
+        markers_hash = self._redis_backend.hgetall(self._backend._get_obj_markers_name(obj))
+        eq_({'stream:ssnake:obj:streams:stream:profile_stream:name:_ssdefault': str(timestamp)}, markers_hash)
+
+        self._backend.delete_stream(obj, stream_name)
+        markers_hash = self._redis_backend.hgetall(self._backend._get_obj_markers_name(obj))
+        eq_({}, markers_hash)
+
+    def test_delete_multiple_streams_at_the_same_time_markers_updated(self):
+        obj = "streams"
+        stream_names = ["profile_stream", "group_stream"]
+        activity_name = "activity1234"
+        published = datetime.datetime.utcnow()
+        timestamp = self._backend._get_timestamp(published)
+
+        self._backend.add_to_stream(obj, stream_names, activity_name, published=published)
+
+        markers_hash = self._redis_backend.hgetall(self._backend._get_obj_markers_name(obj))
+        eq_({'stream:ssnake:obj:streams:stream:profile_stream:name:_ssdefault': str(timestamp), \
+            'stream:ssnake:obj:streams:stream:group_stream:name:_ssdefault': str(timestamp)}, markers_hash)
+
+        self._backend.delete_stream(obj, stream_names)
+        markers_hash = self._redis_backend.hgetall(self._backend._get_obj_markers_name(obj))
+        eq_({}, markers_hash)
+
+    def test_get_stream_items_before_marker_doesnt_updates_marker(self):
+        published = datetime.datetime.now()
+        obj = "streams"
+        stream_name = "profile_stream"
+
+        for i in xrange(5):
+            self._backend.add_to_stream(obj, stream_name, "activity_after_" + str(i), published=published + datetime.timedelta(seconds=i))
+
+        for i in xrange(1, 3):
+            self._backend.add_to_stream(obj, stream_name, "activity_before_" + str(i), published=published - datetime.timedelta(seconds=i))
+
+        eq_(self._redis_backend.hget(self._backend._get_obj_markers_name(obj),\
+            self._backend._get_stream_marker_name(stream_name)), None)
+
+        #get all activities after the marker
+        result = self._backend.get_stream_items(obj, stream_name, marker=published)
+
+        eq_(len(result), 3)
+        eq_(self._redis_backend.hget(self._backend._get_obj_markers_name(obj),\
+            self._backend._get_stream_marker_name(stream_name)), None)
+
+    def test_get_stream_items_after_marker_updates_marker(self):
+        published = datetime.datetime.now()
+        obj = "streams"
+        stream_name = "profile_stream"
+
+        for i in xrange(5):
+            self._backend.add_to_stream(obj, stream_name, "activity_after_" + str(i), published=published + datetime.timedelta(seconds=i))
+
+        for i in xrange(1, 5):
+            self._backend.add_to_stream(obj, stream_name, "activity_before_" + str(i), published=published - datetime.timedelta(seconds=i))
+
+        eq_(self._redis_backend.hget(self._backend._get_obj_markers_name(obj),\
+            self._backend._get_stream_marker_name(stream_name)), None)
+
+        #get all activities before the marker
+        result = self._backend.get_stream_items(obj, stream_name, marker=published, after=True, limit=3)
+
+        eq_(len(result), 3)
+        eq_(long(self._redis_backend.hget(self._backend._get_obj_markers_name(obj),\
+            self._backend._get_stream_marker_name(stream_name))), self._backend._get_timestamp(published + datetime.timedelta(seconds=2)))
