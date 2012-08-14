@@ -318,6 +318,10 @@ class Redis(BaseSunspearBackend):
 
 
 class RedisWithMarker(Redis):
+    def __init__(self, *args, **kwargs):
+        super(RedisWithMarker, self).__init__(*args, **kwargs)
+        self._default_marker_name = kwargs.get('default_marker_name', "_ssdefault")
+
     def _post_delete_stream(self, obj, streams):
         """
         Called after ``streams`` have been deleted.
@@ -389,7 +393,7 @@ class RedisWithMarker(Redis):
         """
         return "%(prefix)sobj:%(obj)s:markers" % {'prefix': self._prefix, 'obj': obj}
 
-    def _get_stream_marker_name(self, stream, marker_name='_ssdefault'):
+    def _get_stream_marker_name(self, stream, marker_name=None):
         """
         Gets the unique name of the marker for the stream. The name of the default marker for the
         stream is ``default``
@@ -399,4 +403,5 @@ class RedisWithMarker(Redis):
         :type marker_name: string
         :param marker_name: the name of the marker for this stream. The default name is ``default``
         """
+        marker_name = marker_name if marker_name is not None else self._default_marker_name
         return "stream:%(stream)s:name:%(name)s" % {'stream': stream, 'name': marker_name}
