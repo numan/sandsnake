@@ -297,42 +297,16 @@ class TestRedisWithMarkerBackend(object):
 
         eq_("stream:%(stream)s:name:%(name)s" % {'stream': stream, 'name': marker_name}, self._backend._get_stream_marker_name(stream, marker_name=marker_name))
 
-    def test_add_to_stream_marker_updated(self):
-        obj = "streams"
-        stream_name = "profile_stream"
-        activity_name = "activity1234"
-        published = datetime.datetime.utcnow()
-        timestamp = self._backend._get_timestamp(published)
-
-        self._backend.add_to_stream(obj, stream_name, activity_name, published=published)
-
-        markers_hash = self._redis_backend.hgetall(self._backend._get_obj_markers_name(obj))
-        eq_({'stream:ssnake:obj:streams:stream:profile_stream:name:_ssdefault': str(timestamp)}, markers_hash)
-
-    def test_add_to_multiple_streams_at_the_same_time_markers_updated(self):
-        obj = "streams"
-        stream_names = ["profile_stream", "group_stream"]
-        activity_name = "activity1234"
-        published = datetime.datetime.utcnow()
-        timestamp = self._backend._get_timestamp(published)
-
-        self._backend.add_to_stream(obj, stream_names, activity_name, published=published)
-
-        markers_hash = self._redis_backend.hgetall(self._backend._get_obj_markers_name(obj))
-        eq_({'stream:ssnake:obj:streams:stream:profile_stream:name:_ssdefault': str(timestamp), \
-            'stream:ssnake:obj:streams:stream:group_stream:name:_ssdefault': str(timestamp)}, markers_hash)
-
     def test_delete_stream_remove_marker(self):
         obj = "streams"
         stream_name = "profile_stream"
-        activity_name = "activity1234"
         published = datetime.datetime.utcnow()
         timestamp = self._backend._get_timestamp(published)
+        initial_marker_hash = {'stream:ssnake:obj:streams:stream:profile_stream:name:_ssdefault': str(timestamp)}
 
-        self._backend.add_to_stream(obj, stream_name, activity_name, published=published)
-
+        self._redis_backend.hmset(self._backend._get_obj_markers_name(obj), initial_marker_hash)
         markers_hash = self._redis_backend.hgetall(self._backend._get_obj_markers_name(obj))
-        eq_({'stream:ssnake:obj:streams:stream:profile_stream:name:_ssdefault': str(timestamp)}, markers_hash)
+        eq_(initial_marker_hash, markers_hash)
 
         self._backend.delete_stream(obj, stream_name)
         markers_hash = self._redis_backend.hgetall(self._backend._get_obj_markers_name(obj))
@@ -341,15 +315,16 @@ class TestRedisWithMarkerBackend(object):
     def test_delete_multiple_streams_at_the_same_time_markers_updated(self):
         obj = "streams"
         stream_names = ["profile_stream", "group_stream"]
-        activity_name = "activity1234"
         published = datetime.datetime.utcnow()
         timestamp = self._backend._get_timestamp(published)
+        initial_marker_hash = {
+            'stream:ssnake:obj:streams:stream:profile_stream:name:_ssdefault': str(timestamp), \
+            'stream:ssnake:obj:streams:stream:group_stream:name:_ssdefault': str(timestamp)
+        }
 
-        self._backend.add_to_stream(obj, stream_names, activity_name, published=published)
-
+        self._redis_backend.hmset(self._backend._get_obj_markers_name(obj), initial_marker_hash)
         markers_hash = self._redis_backend.hgetall(self._backend._get_obj_markers_name(obj))
-        eq_({'stream:ssnake:obj:streams:stream:profile_stream:name:_ssdefault': str(timestamp), \
-            'stream:ssnake:obj:streams:stream:group_stream:name:_ssdefault': str(timestamp)}, markers_hash)
+        eq_(initial_marker_hash, markers_hash)
 
         self._backend.delete_stream(obj, stream_names)
         markers_hash = self._redis_backend.hgetall(self._backend._get_obj_markers_name(obj))
@@ -396,3 +371,22 @@ class TestRedisWithMarkerBackend(object):
         eq_(len(result), 3)
         eq_(long(self._redis_backend.hget(self._backend._get_obj_markers_name(obj),\
             self._backend._get_stream_marker_name(stream_name))), self._backend._get_timestamp(published + datetime.timedelta(seconds=2)))
+
+    def get_default_marker(self):
+        published = datetime.datetime.now()
+        obj = "streams"
+        stream_name = "profile_stream"
+
+        for i in xrange(5):
+            self._backend.add_to_stream(obj, stream_name, "activity_after_" + str(i), published=published + datetime.timedelta(seconds=i))
+
+        for i in xrange(1, 5):
+            self._backend.add_to_stream(obj, stream_name, "activity_before_" + str(i), published=published - datetime.timedelta(seconds=i))
+
+        #adding stuff does not change the default marker
+        eq_(self._redis_backend.get_default_marker(obj, stream_name), 0)
+
+        self._backend.get_stream_items(obj, stream_name, marker=published, after=True, limit=3)
+
+        #but retrieving stuff does
+        eq_(self._redis_backend.get_default_marker(obj, stream_name)), self._backend._get_timestamp(published + datetime.timedelta(seconds=2))

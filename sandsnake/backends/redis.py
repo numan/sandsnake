@@ -322,6 +322,57 @@ class RedisWithMarker(Redis):
         super(RedisWithMarker, self).__init__(*args, **kwargs)
         self._default_marker_name = kwargs.get('default_marker_name', "_ssdefault")
 
+    def set_markers(self, obj, stream_name, markers_dict):
+        """
+        Allows you to set custom markers for a ``stream`` belonging to an ``obj`
+
+        :type obj: string
+        :param obj: string representation of the object for who the stream belongs to
+        :type stream_name: string
+        :param stream_name: the name of the stream you want to update the markers for
+        :type markers_dict: dict
+        :param markers_dict: a dictionary when they keys are the marker names and values are the marker's new value. If the marker does not exist, it will be created
+        """
+        parsed_marker_dict = {}
+        for key, value in markers_dict:
+            parsed_marker_dict[self._get_stream_marker_name(stream_name, marker_name=key)] = value
+
+        self._backend.hmset(self._get_obj_markers_name(obj), parsed_marker_dict)
+
+    def get_markers(self, obj, stream_name, marker, **kwargs):
+        """
+        Gets custom markers for a ``stream`` belonging to an ``obj``
+
+        :type obj: string
+        :param obj: string representation of the object for who the stream belongs to
+        :type stream_name: string
+        :param stream_name: the name of the stream you want to update the markers for
+        :type marker: string or list
+        :param marker: a string or a list of strings of the name of the markers you want
+        """
+        markers = self._listify(marker)
+
+        marker_names = map(lambda marker: self._get_obj_markers_name(stream_name, marker_name=marker), markers)
+        results = self._backend.hmget(self._get_obj_markers_name(obj), marker_names)
+
+        if len(results) == 1:
+            return results[0]
+        return results
+
+    def get_default_marker(self, obj, stream_name, **kwargs):
+        """
+        Gets the default marker for the ``stream`` belonging to an ``obj``
+
+        :type obj: string
+        :param obj: string representation of the object for who the stream belongs to
+        :type stream_name: string
+        :param stream_name: the name of the stream you want to update the markers for
+        """
+        marker_name = self._get_obj_markers_name(stream_name)
+        result = self._backend.hget(self._get_obj_markers_name(obj), marker_name)
+
+        return 0 if result is None else result
+
     def _post_delete_stream(self, obj, streams):
         """
         Called after ``streams`` have been deleted.
@@ -335,26 +386,6 @@ class RedisWithMarker(Redis):
         with self._backend.map() as conn:
             for stream in streams:
                 conn.hdel(self._get_obj_markers_name(obj), self._get_stream_marker_name(stream))
-
-    def _post_add_to_stream(self, obj, streams, activity, timestamp):
-        """
-        Called after an activity has been added to streams. Updates the default marker for the stream
-
-        :type obj: string
-        :param obj: string representation of the object for who the stream belongs to
-        :type streams: list
-        :param streams: a list of ``streams`` to which the ``activity`` has been added
-        :type activity: string
-        :param activity: the name of the activity
-        :type timestamp: the score of the activity
-        :param timestamp: the score of the activity
-        """
-        super(RedisWithMarker, self)._post_add_to_stream(obj, streams, activity, timestamp)
-
-        default_markers_for_stream = {}
-        for stream in streams:
-            default_markers_for_stream[self._get_stream_marker_name(stream)] = timestamp
-        self._backend.hmset(self._get_obj_markers_name(obj), default_markers_for_stream)
 
     def _post_get_stream_items(self, results, obj, stream_name, marker, limit, after, **kwargs):
         """
