@@ -372,7 +372,7 @@ class TestRedisWithMarkerBackend(object):
         eq_(long(self._redis_backend.hget(self._backend._get_obj_markers_name(obj),\
             self._backend._get_stream_marker_name(stream_name))), self._backend._get_timestamp(published + datetime.timedelta(seconds=2)))
 
-    def get_default_marker(self):
+    def test_get_default_marker(self):
         published = datetime.datetime.now()
         obj = "streams"
         stream_name = "profile_stream"
@@ -384,9 +384,34 @@ class TestRedisWithMarkerBackend(object):
             self._backend.add_to_stream(obj, stream_name, "activity_before_" + str(i), published=published - datetime.timedelta(seconds=i))
 
         #adding stuff does not change the default marker
-        eq_(self._redis_backend.get_default_marker(obj, stream_name), 0)
+        eq_(self._backend.get_default_marker(obj, stream_name), 0)
 
         self._backend.get_stream_items(obj, stream_name, marker=published, after=True, limit=3)
 
         #but retrieving stuff does
-        eq_(self._redis_backend.get_default_marker(obj, stream_name)), self._backend._get_timestamp(published + datetime.timedelta(seconds=2))
+        eq_(self._backend.get_default_marker(obj, stream_name), self._backend._get_timestamp(published + datetime.timedelta(seconds=2)))
+
+    def test_get_markers_single_marker(self):
+        obj = "streams"
+        stream_name = "profile_stream"
+        marker_name = "test marker"
+
+        self._redis_backend.hmset(self._backend._get_obj_markers_name(obj), {self._backend._get_stream_marker_name(stream_name, marker_name=marker_name): 25L})
+
+        marker_value = self._backend.get_markers(obj, stream_name, marker_name)
+        eq_(marker_value, 25L)
+
+    def test_get_markers_multiple_marker(self):
+        obj = "streams"
+        stream_name = "profile_stream"
+        marker_names_dict = {"test marker": 25L, "test marker 2": 40L, "test marker 3": 50L}
+
+        parsed_markers_dict = {}
+        for key, value in marker_names_dict.items():
+            parsed_markers_dict[self._backend._get_stream_marker_name(stream_name, marker_name=key)] = value
+        self._redis_backend.hmset(self._backend._get_obj_markers_name(obj), parsed_markers_dict)
+
+        markers = marker_names_dict.keys()
+        marker_values = self._backend.get_markers(obj, stream_name, markers)
+        for marker, marker_value in zip(markers, marker_values):
+            eq_(marker_value, marker_names_dict[marker])

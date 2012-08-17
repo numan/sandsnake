@@ -352,12 +352,13 @@ class RedisWithMarker(Redis):
         """
         markers = self._listify(marker)
 
-        marker_names = map(lambda marker: self._get_obj_markers_name(stream_name, marker_name=marker), markers)
+        marker_names = map(lambda marker: self._get_stream_marker_name(stream_name, marker_name=marker), markers)
         results = self._backend.hmget(self._get_obj_markers_name(obj), marker_names)
 
-        if len(results) == 1:
-            return results[0]
-        return results
+        parsed_results = [long(result) for result in results]
+        if len(parsed_results) == 1:
+            return parsed_results[0]
+        return parsed_results
 
     def get_default_marker(self, obj, stream_name, **kwargs):
         """
@@ -368,10 +369,10 @@ class RedisWithMarker(Redis):
         :type stream_name: string
         :param stream_name: the name of the stream you want to update the markers for
         """
-        marker_name = self._get_obj_markers_name(stream_name)
+        marker_name = self._get_stream_marker_name(stream_name)
         result = self._backend.hget(self._get_obj_markers_name(obj), marker_name)
 
-        return 0 if result is None else result
+        return 0L if result is None else long(result)
 
     def _post_delete_stream(self, obj, streams):
         """
