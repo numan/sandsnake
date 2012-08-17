@@ -415,3 +415,70 @@ class TestRedisWithMarkerBackend(object):
         marker_values = self._backend.get_markers(obj, stream_name, markers)
         for marker, marker_value in zip(markers, marker_values):
             eq_(marker_value, marker_names_dict[marker])
+
+    def test_set_markers_multiple_marker(self):
+        obj = "streams"
+        stream_name = "profile_stream"
+        marker_names_dict = {"test marker": 25L, "test marker 2": 40L, "test marker 3": 50L}
+
+        self._backend.set_markers(obj, stream_name, marker_names_dict)
+
+        markers = marker_names_dict.keys()
+        for marker in markers:
+            eq_(long(self._redis_backend.hget(self._backend._get_obj_markers_name(obj),\
+                            self._backend._get_stream_marker_name(stream_name, marker_name=marker))), marker_names_dict[marker])
+
+
+class TestRedisWithBubblingBackend(object):
+    def setUp(self):
+        self._backend = create_sandsnake_backend({
+            "backend": "sandsnake.backends.redis.RedisWithBubbling",
+            "settings": {
+                "hosts": [{"db": 3}, {"db": 4}, {"db": 5}]
+            },
+        })
+
+        self._redis_backend = self._backend.get_backend()
+
+        #clear the redis database so we are in a consistent state
+        self._redis_backend.flushdb()
+
+    def tearDown(self):
+        self._redis_backend.flushdb()
+
+    def test_bubble_activities(self):
+        published = datetime.datetime.now()
+        obj = "streams"
+        stream_name = "profile_stream"
+
+        for i in xrange(5):
+            self._backend.add_to_stream(obj, stream_name, "activity_after_" + str(i), published=published + datetime.timedelta(seconds=i))
+
+        for i in xrange(1, 5):
+            self._backend.add_to_stream(obj, stream_name, "activity_before_" + str(i), published=published - datetime.timedelta(seconds=i))
+
+        eq_(self._redis_backend.hget(self._backend._get_obj_markers_name(obj),\
+            self._backend._get_stream_marker_name(stream_name)), None)
+
+        #get all activities before the marker
+        result = self._backend.get_stream_items(obj, stream_name, marker=published, after=True, limit=3)
+
+        eq_(len(result), 3)
+        eq_(['activity_after_0', 'activity_after_1', 'activity_after_2'], result)
+
+        self._backend.bubble_activities(obj, stream_name, {'activity_after_2': None})
+
+        #get all activities before the marker
+        result = self._backend.get_stream_items(obj, stream_name, marker=published, after=True, limit=3)
+
+        eq_(len(result), 3)
+        eq_(['activity_after_0', 'activity_after_1', 'activity_after_3'], result)
+
+        self._backend.bubble_activities(obj, stream_name, {'activity_after_3': None, 'activity_after_0': published + datetime.timedelta(seconds=2)})
+
+        #get all activities before the marker
+        result = self._backend.get_stream_items(obj, stream_name, marker=published, after=True, limit=3)
+
+        eq_(len(result), 3)
+        eq_(['activity_after_1', 'activity_after_0', 'activity_after_4'], result)
+

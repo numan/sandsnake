@@ -334,7 +334,7 @@ class RedisWithMarker(Redis):
         :param markers_dict: a dictionary when they keys are the marker names and values are the marker's new value. If the marker does not exist, it will be created
         """
         parsed_marker_dict = {}
-        for key, value in markers_dict:
+        for key, value in markers_dict.items():
             parsed_marker_dict[self._get_stream_marker_name(stream_name, marker_name=key)] = value
 
         self._backend.hmset(self._get_obj_markers_name(obj), parsed_marker_dict)
@@ -437,3 +437,22 @@ class RedisWithMarker(Redis):
         """
         marker_name = marker_name if marker_name is not None else self._default_marker_name
         return "stream:%(stream)s:name:%(name)s" % {'stream': stream, 'name': marker_name}
+
+
+class RedisWithBubbling(RedisWithMarker):
+
+    def bubble_activities(self, obj, stream_name, activities_dict):
+
+        for key, value in activities_dict.items():
+            #we we did not provide a custom score, then just set it the the current timestamp
+            if value is None:
+                score = self._get_timestamp(datetime.datetime.utcnow())
+            else:
+                #Try to parse the score as a long. If it doesn't work, try to parse a date.
+                try:
+                    score = long(value)
+                except (ValueError, TypeError):
+                    score = self._get_timestamp(self._parse_date(date=value))
+            activities_dict[key] = score
+
+        self._backend.zadd(self._get_stream_name(obj, stream_name), **activities_dict)
