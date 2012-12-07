@@ -14,8 +14,9 @@ setup(
     packages=find_packages(exclude=['tests']),
     test_suite='nose.collector',
     install_requires=[
-        'nydus==0.9.0',
-        'redis==2.4.13',
+        'nydus==0.10.3',
+        'redis==2.7.2',
+        'hiredis==0.1.1',
         'python-dateutil==1.5',
     ],
     tests_require=[
