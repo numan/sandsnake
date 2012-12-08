@@ -466,7 +466,7 @@ class TestRedisWithBubblingBackend(object):
         eq_(len(result), 3)
         eq_(['activity_after_0', 'activity_after_1', 'activity_after_2'], result)
 
-        self._backend.bubble_activities(obj, stream_name, {'activity_after_2': None})
+        self._backend.bubble_activities(obj, stream_name, {'activity_after_2': published + datetime.timedelta(seconds=20)})
 
         #get all activities before the marker
         result = self._backend.get_stream_items(obj, stream_name, marker=published, after=True, limit=3)
@@ -474,7 +474,7 @@ class TestRedisWithBubblingBackend(object):
         eq_(len(result), 3)
         eq_(['activity_after_0', 'activity_after_1', 'activity_after_3'], result)
 
-        self._backend.bubble_activities(obj, stream_name, {'activity_after_3': None, 'activity_after_0': published + datetime.timedelta(seconds=2)})
+        self._backend.bubble_activities(obj, stream_name, {'activity_after_3': published + datetime.timedelta(seconds=21), 'activity_after_0': published + datetime.timedelta(seconds=2)})
 
         #get all activities before the marker
         result = self._backend.get_stream_items(obj, stream_name, marker=published, after=True, limit=3)

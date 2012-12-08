@@ -442,7 +442,19 @@ class RedisWithMarker(Redis):
 class RedisWithBubbling(RedisWithMarker):
 
     def bubble_activities(self, obj, stream_name, activities_dict):
+        """
+        Moves activities up and down the sorted set based on score (in most cases, a timestamp)
+        **NOTE:** If you decide to use timestamps, use UTC so you don't get screwed over by timezones.
 
+        :type obj: string
+        :param obj: a unique string identifing the object
+        :type stream_name: string
+        :param stream_name: a unique string identifing a stream
+        :type activities_dict: dict
+        :param activities_dict: a dictionary where keys are the keys for the activity and values are the new
+        score for the activity. You can pass ``None`` as the score for any activity and it will assign the score
+        to the current utc timestamp.
+        """
         for key, value in activities_dict.items():
             #we we did not provide a custom score, then just set it the the current timestamp
             if value is None:
