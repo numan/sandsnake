@@ -447,7 +447,7 @@ class TestRedisWithBubblingBackend(object):
         self._redis_backend.flushdb()
 
     def test_bubble_activities(self):
-        published = datetime.datetime.now()
+        published = datetime.datetime.utcnow()
         obj = "streams"
         stream_name = "profile_stream"
 
