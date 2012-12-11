@@ -3,7 +3,7 @@
 from setuptools import setup, find_packages
 
 setup(
-    name="sunspear",
+    name="sandsnake",
     license='Apache License 2.0',
     version="0.1.0ALPHA",
     description="Manage activity streams for objects.",
