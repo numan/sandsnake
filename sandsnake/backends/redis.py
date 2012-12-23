@@ -17,6 +17,7 @@ under the License.
 """
 from sandsnake.backends.base import BaseSunspearBackend
 from sandsnake.exceptions import SandsnakeValidationException
+from sandsnake.utils import OrderedSet
 
 from nydus.db import create_cluster
 
@@ -178,7 +179,7 @@ class Redis(BaseSunspearBackend):
         """
         stream_names = map(lambda x: self._get_stream_name(obj, x), self._listify(stream_name))
 
-        return self._get_set_union(stream_names)[0]
+        return self._get_set_union(stream_names)
 
     def _post_get_stream_items(self, results, obj, stream_name, marker, limit, after, **kwargs):
         """
@@ -247,11 +248,10 @@ class Redis(BaseSunspearBackend):
         streams_list = list(args)
         unions = []
         for streams in streams_list:
-            stream_set = set()
             for stream in streams:
-                stream_set.update(self._backend.zrange(stream, 0, -1))
-            unions.append(stream_set)
-        return unions
+                unions.extend(self._backend.zrange(stream, 0, -1, withscores=True))
+        sorted(unions, key=lambda x: x[1])
+        return OrderedSet(map(lambda x: x[0], unions))
 
     def _get_stream_name(self, obj, stream):
         """

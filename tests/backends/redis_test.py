@@ -202,9 +202,12 @@ class TestRedisBackend(object):
         self._backend.add_to_stream(rhs_obj, rhs_stream_names[1], rhs_activities[1][1])
         self._backend.add_to_stream(rhs_obj, rhs_stream_names[1], rhs_activities[1][2])
 
-        eq_(self._backend.get_stream_union(lhs_obj, lhs_stream_names) - self._backend.get_stream_union(rhs_obj, rhs_stream_names), set(['a1', 'b2']))
-        eq_(self._backend.get_stream_union(lhs_obj, lhs_stream_names[0]) - self._backend.get_stream_union(rhs_obj, rhs_stream_names[1]), set(['a1', 'a2', 'a3']))
-        eq_(self._backend.get_stream_union(lhs_obj, lhs_stream_names[0]) - self._backend.get_stream_union(rhs_obj, rhs_stream_names[0]), set(['a1']))
+        eq_(self._backend.get_stream_union(lhs_obj, lhs_stream_names) - \
+            self._backend.get_stream_union(rhs_obj, rhs_stream_names), ['a1', 'b2'])
+        eq_(self._backend.get_stream_union(lhs_obj, lhs_stream_names[0]) - \
+            self._backend.get_stream_union(rhs_obj, rhs_stream_names[1]), ['a1', 'a2', 'a3'])
+        eq_(self._backend.get_stream_union(lhs_obj, lhs_stream_names[0]) - \
+            self._backend.get_stream_union(rhs_obj, rhs_stream_names[0]), ['a1'])
 
     def test_get_stream_items(self):
         published = datetime.datetime.now()
