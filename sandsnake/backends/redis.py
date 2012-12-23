@@ -168,7 +168,7 @@ class Redis(BaseSunspearBackend):
             return results[0]
         return results
 
-    def get_stream_union(self, obj, stream_name):
+    def get_stream_union(self, obj, stream_name, limit=10):
         """
         Gets a union of all activities in ``stream_name``
 
@@ -179,7 +179,7 @@ class Redis(BaseSunspearBackend):
         """
         stream_names = map(lambda x: self._get_stream_name(obj, x), self._listify(stream_name))
 
-        return self._get_set_union(stream_names)
+        return self._get_set_union(stream_names, limit=limit)
 
     def _post_get_stream_items(self, results, obj, stream_name, marker, limit, after, **kwargs):
         """
@@ -240,16 +240,17 @@ class Redis(BaseSunspearBackend):
         """
         pass
 
-    def _get_set_union(self, *args):
+    def _get_set_union(self, *args, **kwargs):
         """
         Given a set of stream sames (or any sorted sets), it stores the union of them in a new sorted set
         and returns the key.
         """
         streams_list = list(args)
+        limit = kwargs.get('limit', 10)
         unions = []
         for streams in streams_list:
             for stream in streams:
-                unions.extend(self._backend.zrange(stream, 0, -1, withscores=True))
+                unions.extend(self._backend.zrange(stream, 0, limit, withscores=True))
         sorted(unions, key=lambda x: x[1])
         return OrderedSet(map(lambda x: x[0], unions))
 
