@@ -131,7 +131,7 @@ class Redis(BaseSunspearBackend):
 
         self._post_delete_stream(obj, streams_removed)
 
-    def get_stream_items(self, obj, stream_name, marker=None, limit=30, after=False, **kwargs):
+    def get_stream_items(self, obj, stream_name, marker=None, limit=30, after=False, withscores=False, **kwargs):
         """
         Gets a list of activities. Returns a maximum of ``limit`` stream items. If ``after`` is ``True``
         returns a list of activities after the marker.
@@ -146,6 +146,9 @@ class Redis(BaseSunspearBackend):
         :param limit: the maximum number of activities to get
         :type after: boolean
         :param after: if ``True`` gets activities after ``marker`` otherwise gets it before ``marker``
+        :type withscores: boolean
+        :param withscores: if ``True``, returns results as tuples where the second item is the score
+        for that stream item.
         """
         if marker is None:
             raise SandsnakeValidationException("You must provide a marker to get stream items.")
@@ -164,13 +167,14 @@ class Redis(BaseSunspearBackend):
                     results.append(conn.zrevrangebyscore(self._get_stream_name(obj, stream), timestamp, \
                         "-inf", start=0, num=limit, withscores=True, score_cast_func=long))
 
-        results = self._post_get_stream_items(results, obj, stream_name, marker, limit, after, **kwargs)
+        results = self._post_get_stream_items(results, obj, stream_name, marker, limit, \
+            after, withscores, **kwargs)
 
         if len(results) == 1:
             return results[0]
         return results
 
-    def _post_get_stream_items(self, results, obj, stream_name, marker, limit, after, **kwargs):
+    def _post_get_stream_items(self, results, obj, stream_name, marker, limit, after, withscores, **kwargs):
         """
         Returns a list of activities after processing it.
 
@@ -184,10 +188,17 @@ class Redis(BaseSunspearBackend):
         :param limit: the maximum number of activities to get
         :type after: boolean
         :param after: if ``True`` gets activities after ``marker`` otherwise gets it before ``marker``
+        :type withscores: boolean
+        :param withscores: if ``True``, returns results as tuples where the second item is the score
+        for that stream item.
         """
-        processed_activities = []
-        for result in results:
-            processed_activities.append(map(lambda x: x[0], result))
+        if withscores:
+            processed_activities = results
+        else:
+            processed_activities = []
+            for result in results:
+                processed_activities.append(map(lambda x: x[0], result))
+
         return processed_activities
 
     def _post_add_to_stream(self, obj, streams, activity, timestamp):
@@ -364,7 +375,7 @@ class RedisWithMarker(Redis):
             for stream in streams:
                 conn.hdel(self._get_obj_markers_name(obj), self._get_stream_marker_name(stream))
 
-    def _post_get_stream_items(self, results, obj, stream_name, marker, limit, after, **kwargs):
+    def _post_get_stream_items(self, results, obj, stream_name, marker, limit, after, withscores, **kwargs):
         """
         Updates the default marker for streams.
 
@@ -380,6 +391,9 @@ class RedisWithMarker(Redis):
         :param limit: the maximum number of activities to get
         :type after: boolean
         :param after: if ``True`` gets activities after ``marker`` otherwise gets it before ``marker``
+        :type withscores: boolean
+        :param withscores: if ``True``, returns results as tuples where the second item is the score
+        for that stream item.
         """
         streams = self._listify(stream_name)
 
@@ -390,7 +404,8 @@ class RedisWithMarker(Redis):
                         conn.hset(self._get_obj_markers_name(obj),\
                             self._get_stream_marker_name(stream), results[index][-1][1])
 
-        return super(RedisWithMarker, self)._post_get_stream_items(results, obj, stream_name, marker, limit, after, **kwargs)
+        return super(RedisWithMarker, self)._post_get_stream_items(results, obj, stream_name, marker, \
+            limit, after, withscores, **kwargs)
 
     def _get_obj_markers_name(self, obj):
         """

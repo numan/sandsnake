@@ -228,7 +228,11 @@ class TestRedisBackend(object):
 
     def test_post_get_stream_items(self):
         eq_(self._backend._post_get_stream_items([[('act:1', 1,), ('act:2', 2, ), ('act:3', 3)]],\
-            "obj1", "stream1", 123, 20, False), [['act:1', 'act:2', 'act:3']])
+            "obj1", "stream1", 123, 20, False, False), [['act:1', 'act:2', 'act:3']])
+
+    def test_post_get_stream_items_(self):
+        eq_(self._backend._post_get_stream_items([[('act:1', 1,), ('act:2', 2, ), ('act:3', 3)]],\
+            "obj1", "stream1", 123, 20, False, True), [[('act:1', 1,), ('act:2', 2, ), ('act:3', 3)]])
 
 
 class TestRedisWithMarkerBackend(object):
