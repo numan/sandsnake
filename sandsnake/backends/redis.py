@@ -158,28 +158,17 @@ class Redis(BaseSunspearBackend):
         with self._backend.map() as conn:
             for stream in streams:
                 if after:
-                    results.append(conn.zrangebyscore(self._get_stream_name(obj, stream), timestamp, "+inf", start=0, num=limit, withscores=True, score_cast_func=long))
+                    results.append(conn.zrangebyscore(self._get_stream_name(obj, stream), timestamp, \
+                        "+inf", start=0, num=limit, withscores=True, score_cast_func=long))
                 else:
-                    results.append(conn.zrevrangebyscore(self._get_stream_name(obj, stream), timestamp, "-inf", start=0, num=limit, withscores=True, score_cast_func=long))
+                    results.append(conn.zrevrangebyscore(self._get_stream_name(obj, stream), timestamp, \
+                        "-inf", start=0, num=limit, withscores=True, score_cast_func=long))
 
         results = self._post_get_stream_items(results, obj, stream_name, marker, limit, after, **kwargs)
 
         if len(results) == 1:
             return results[0]
         return results
-
-    def get_stream_union(self, obj, stream_name, limit=10):
-        """
-        Gets a union of all activities in ``stream_name``
-
-        :type obj: string
-        :param obj: string representation of the object for who the stream belongs to
-        :type stream_name: string or list of strings
-        :param stream_name: the name of the stream(s)
-        """
-        stream_names = map(lambda x: self._get_stream_name(obj, x), self._listify(stream_name))
-
-        return self._get_set_union(stream_names, limit=limit)
 
     def _post_get_stream_items(self, results, obj, stream_name, marker, limit, after, **kwargs):
         """
@@ -239,20 +228,6 @@ class Redis(BaseSunspearBackend):
         :param streams: a list of ``streams`` to which the ``activity`` has been added
         """
         pass
-
-    def _get_set_union(self, *args, **kwargs):
-        """
-        Given a set of stream sames (or any sorted sets), it stores the union of them in a new sorted set
-        and returns the key.
-        """
-        streams_list = list(args)
-        limit = kwargs.get('limit', 10)
-        unions = []
-        for streams in streams_list:
-            for stream in streams:
-                unions.extend(self._backend.zrange(stream, 0, limit, withscores=True))
-        sorted(unions, key=lambda x: x[1])
-        return OrderedSet(map(lambda x: x[0], unions))
 
     def _get_stream_name(self, obj, stream):
         """

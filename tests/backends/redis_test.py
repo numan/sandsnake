@@ -173,42 +173,6 @@ class TestRedisBackend(object):
         eq_(self._redis_backend.zcard(self._backend._get_stream_name(self.obj, self.stream_name)), 1)
         eq_(self._redis_backend.scard(self._backend._get_stream_collection_name(self.obj)), 1)
 
-    def test_get_stream_difference(self):
-        lhs_obj = "user:1"
-        lhs_stream_names = ["profile_stream", "group_stream"]
-        lhs_activities = [['a1', 'a2', 'a3'],  ['b1', 'b2', 'b3']]
-
-        rhs_obj = "user:2"
-        rhs_stream_names = ["profile_stream", "group_stream"]
-        rhs_activities = [['a4', 'a2', 'a3'], ['b1', 'b4', 'b3']]
-
-        #first stream
-        self._backend.add_to_stream(lhs_obj, lhs_stream_names[0], lhs_activities[0][0])
-        self._backend.add_to_stream(lhs_obj, lhs_stream_names[0], lhs_activities[0][1])
-        self._backend.add_to_stream(lhs_obj, lhs_stream_names[0], lhs_activities[0][2])
-
-        #second stream
-        self._backend.add_to_stream(lhs_obj, lhs_stream_names[1], lhs_activities[1][0])
-        self._backend.add_to_stream(lhs_obj, lhs_stream_names[1], lhs_activities[1][1])
-        self._backend.add_to_stream(lhs_obj, lhs_stream_names[1], lhs_activities[1][2])
-
-        #first stream
-        self._backend.add_to_stream(rhs_obj, rhs_stream_names[0], rhs_activities[0][0])
-        self._backend.add_to_stream(rhs_obj, rhs_stream_names[0], rhs_activities[0][1])
-        self._backend.add_to_stream(rhs_obj, rhs_stream_names[0], rhs_activities[0][2])
-
-        #second stream
-        self._backend.add_to_stream(rhs_obj, rhs_stream_names[1], rhs_activities[1][0])
-        self._backend.add_to_stream(rhs_obj, rhs_stream_names[1], rhs_activities[1][1])
-        self._backend.add_to_stream(rhs_obj, rhs_stream_names[1], rhs_activities[1][2])
-
-        eq_(self._backend.get_stream_union(lhs_obj, lhs_stream_names) - \
-            self._backend.get_stream_union(rhs_obj, rhs_stream_names), ['a1', 'b2'])
-        eq_(self._backend.get_stream_union(lhs_obj, lhs_stream_names[0]) - \
-            self._backend.get_stream_union(rhs_obj, rhs_stream_names[1]), ['a1', 'a2', 'a3'])
-        eq_(self._backend.get_stream_union(lhs_obj, lhs_stream_names[0]) - \
-            self._backend.get_stream_union(rhs_obj, rhs_stream_names[0]), ['a1'])
-
     def test_get_stream_items(self):
         published = datetime.datetime.now()
         obj = "streams"
