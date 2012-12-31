@@ -6,6 +6,7 @@ from sandsnake import create_sandsnake_backend
 from sandsnake.exceptions import SandsnakeValidationException
 
 import datetime
+import itertools
 
 
 class TestRedisBackend(object):
@@ -416,6 +417,25 @@ class TestRedisWithBubblingBackend(object):
 
     def tearDown(self):
         self._redis_backend.flushdb()
+
+    def test_clear_all(self):
+        published = datetime.datetime.utcnow()
+        obj = "streams"
+        stream_name = "profile_stream"
+
+        for i in xrange(2):
+            self._backend.add_to_stream(obj, stream_name, "activity_after_" + str(i), published=published + datetime.timedelta(seconds=i))
+
+        for i in xrange(1, 2):
+            self._backend.add_to_stream(obj, stream_name, "activity_before_" + str(i), published=published - datetime.timedelta(seconds=i))
+
+        redis_client = self._backend.get_backend()
+
+        ok_(not len(list(itertools.chain(*redis_client.keys()))) == 0)
+
+        self._backend.clear_all()
+
+        ok_(len(list(itertools.chain(*redis_client.keys()))) == 0)
 
     def test_bubble_activities(self):
         published = datetime.datetime.utcnow()

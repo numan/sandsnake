@@ -17,7 +17,6 @@ under the License.
 """
 from sandsnake.backends.base import BaseSunspearBackend
 from sandsnake.exceptions import SandsnakeValidationException
-from sandsnake.utils import OrderedSet
 
 from nydus.db import create_cluster
 
@@ -26,6 +25,7 @@ from dateutil.parser import parse
 import datetime
 import calendar
 import uuid
+import itertools
 
 
 class Redis(BaseSunspearBackend):
@@ -53,6 +53,26 @@ class Redis(BaseSunspearBackend):
         })
 
         self._prefix = kwargs.get('prefix', "ssnake:")
+
+    def get_backen(self):
+        """
+        returns the nydus backend
+        """
+        return self._backend
+
+    def clear_all(self):
+        """
+        Deletes all ``sandsnake`` related data from redis.
+
+        .. warning::
+
+            Very expensive and destructive operation. Use with causion
+        """
+        keys = self._backend.keys()
+
+        for key in itertools.chain(*keys):
+            if key.startswith(self._prefix):
+                self._backend.delete(key)
 
     def add_to_stream(self, obj, stream_name, activity, published=None):
         """
