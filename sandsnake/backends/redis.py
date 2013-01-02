@@ -54,7 +54,7 @@ class Redis(BaseSunspearBackend):
 
         self._prefix = kwargs.get('prefix', "ssnake:")
 
-    def get_backen(self):
+    def get_backend(self):
         """
         returns the nydus backend
         """
@@ -71,8 +71,9 @@ class Redis(BaseSunspearBackend):
         keys = self._backend.keys()
 
         for key in itertools.chain(*keys):
-            if key.startswith(self._prefix):
-                self._backend.delete(key)
+            with self._backend.map() as conn:
+                if key.startswith(self._prefix):
+                    conn.delete(key)
 
     def add_to_stream(self, obj, stream_name, activity, published=None):
         """
