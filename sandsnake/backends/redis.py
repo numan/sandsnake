@@ -314,11 +314,11 @@ class Redis(BaseSunspearBackend):
             dt = date
         return dt
 
-    def _get_timestamp(self, datetime):
+    def _get_timestamp(self, dt_obj):
         """
-        returns a unix timestamp representing the datetime object
+        returns a unix timestamp representing the ``datetime`` object
         """
-        return long((time.mktime(datetime.timetuple())) * 1000)
+        return long(round((time.mktime(dt_obj.timetuple())) * 1000))
 
 
 class RedisWithMarker(Redis):
