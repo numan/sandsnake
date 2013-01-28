@@ -28,16 +28,16 @@ class TestRedisBackend(object):
 
     def test_get_timestamp(self):
         jan_first = datetime.datetime(2012, 01, 01, 12, 0, 0, 0)
-        eq_(13254192000000L, self._backend._get_timestamp(jan_first))
+        eq_(1325448000000L, self._backend._get_timestamp(jan_first))
 
-    def _setup_basic_stream(self):
-        self.obj = "streams"
-        self.stream_name = "profile_stream"
+    def _setup_basic_index(self):
+        self.obj = "indexes"
+        self.index_name = "profile_index"
         self.activity_name = "activity1234"
         published = datetime.datetime.utcnow()
         self.timestamp = self._backend._get_timestamp(published)
 
-        self._backend.add_to_stream(self.obj, self.stream_name, self.activity_name, published=published)
+        self._backend.add(self.obj, self.index_name, self.activity_name, published=published)
 
     def test_parse_date(self):
         datetime_string = "2012-01-01T12:00:00"
@@ -52,188 +52,188 @@ class TestRedisBackend(object):
         ok_(now < self._backend._parse_date())  # Should return the current datetime
 
     def test_listify(self):
-        single_stream = 'my_stream'
-        many_streams = ['second_stream', 'third_stream']
+        single_index = 'my_index'
+        many_indexes = ['second_index', 'third_index']
 
-        eq_([single_stream], self._backend._listify(single_stream))
-        eq_(many_streams, self._backend._listify(many_streams))
+        eq_([single_index], self._backend._listify(single_index))
+        eq_(many_indexes, self._backend._listify(many_indexes))
 
-    def test_get_stream_collection_name(self):
+    def test_get_index_collection_name(self):
         obj = "user:1234"
-        eq_("%(prefix)s%(obj)s:streams" % {'prefix': self._backend._prefix, 'obj': obj}, self._backend._get_stream_collection_name(obj))
+        eq_("%(prefix)s%(obj)s:indexes" % {'prefix': self._backend._prefix, 'obj': obj}, self._backend._get_index_collection_name(obj))
 
-    def test_get_stream_name(self):
+    def test_get_index_name(self):
         obj = "user:1234"
-        stream_name = "profile_stream"
-        eq_("%(prefix)sobj:%(obj)s:stream:%(stream)s" % {'prefix': self._backend._prefix, 'obj': obj, 'stream': stream_name}, self._backend._get_stream_name(obj, stream_name))
+        index_name = "profile_index"
+        eq_("%(prefix)sobj:%(obj)s:index:%(index)s" % {'prefix': self._backend._prefix, 'obj': obj, 'index': index_name}, self._backend._get_index_name(obj, index_name))
 
-    def test_get_stream_name_collection_name_dont_clash(self):
-        obj = "streams"
-        stream_name = "profile_stream"
-        ok_(self._backend._get_stream_collection_name(obj) != self._backend._get_stream_name(obj, stream_name))
+    def test_get_index_name_collection_name_dont_clash(self):
+        obj = "indexes"
+        index_name = "profile_index"
+        ok_(self._backend._get_index_collection_name(obj) != self._backend._get_index_name(obj, index_name))
 
-    def test_add_to_stream(self):
-        obj = "streams"
-        stream_name = "profile_stream"
+    def test_add(self):
+        obj = "indexes"
+        index_name = "profile_index"
         activity_name = "activity1234"
         published = datetime.datetime.utcnow()
         timestamp = self._backend._get_timestamp(published)
 
-        self._backend.add_to_stream(obj, stream_name, activity_name, published=published)
+        self._backend.add(obj, index_name, activity_name, published=published)
 
-        eq_(self._redis_backend.zcard(self._backend._get_stream_name(obj, stream_name)), 1)
-        eq_(self._redis_backend.scard(self._backend._get_stream_collection_name(obj)), 1)
-        eq_(self._redis_backend.zrange(self._backend._get_stream_name(obj, stream_name), 0, -1, withscores=True), [(activity_name, timestamp)])
+        eq_(self._redis_backend.zcard(self._backend._get_index_name(obj, index_name)), 1)
+        eq_(self._redis_backend.scard(self._backend._get_index_collection_name(obj)), 1)
+        eq_(self._redis_backend.zrange(self._backend._get_index_name(obj, index_name), 0, -1, withscores=True), [(activity_name, timestamp)])
 
-    def test_add_to_multiple_streams_at_the_same_time(self):
-        obj = "streams"
-        stream_names = ["profile_stream", "group_stream"]
+    def test_add_to_multiple_indexes_at_the_same_time(self):
+        obj = "indexes"
+        index_names = ["profile_index", "group_index"]
         activity_name = "activity1234"
         published = datetime.datetime.utcnow()
 
-        self._backend.add_to_stream(obj, stream_names, activity_name, published=published)
+        self._backend.add(obj, index_names, activity_name, published=published)
 
-        eq_(self._redis_backend.zcard(self._backend._get_stream_name(obj, stream_names[0])), 1)
-        eq_(self._redis_backend.zcard(self._backend._get_stream_name(obj, stream_names[1])), 1)
-        eq_(self._redis_backend.scard(self._backend._get_stream_collection_name(obj)), 2)
+        eq_(self._redis_backend.zcard(self._backend._get_index_name(obj, index_names[0])), 1)
+        eq_(self._redis_backend.zcard(self._backend._get_index_name(obj, index_names[1])), 1)
+        eq_(self._redis_backend.scard(self._backend._get_index_collection_name(obj)), 2)
 
-    def test_delete_from_stream(self):
-        self._setup_basic_stream()
+    def test_remove(self):
+        self._setup_basic_index()
 
-        eq_(self._redis_backend.zcard(self._backend._get_stream_name(self.obj, self.stream_name)), 1)
-        eq_(self._redis_backend.scard(self._backend._get_stream_collection_name(self.obj)), 1)
-        eq_(self._redis_backend.zrange(self._backend._get_stream_name(self.obj, self.stream_name), 0, -1, withscores=True), [(self.activity_name, self.timestamp)])
+        eq_(self._redis_backend.zcard(self._backend._get_index_name(self.obj, self.index_name)), 1)
+        eq_(self._redis_backend.scard(self._backend._get_index_collection_name(self.obj)), 1)
+        eq_(self._redis_backend.zrange(self._backend._get_index_name(self.obj, self.index_name), 0, -1, withscores=True), [(self.activity_name, self.timestamp)])
 
-        #now delete from the stream:
-        self._backend.delete_from_stream(self.obj, self.stream_name, self.activity_name)
+        #now delete from the index:
+        self._backend.remove(self.obj, self.index_name, self.activity_name)
 
-        eq_(self._redis_backend.zcard(self._backend._get_stream_name(self.obj, self.stream_name)), 0)
-        eq_(self._redis_backend.scard(self._backend._get_stream_collection_name(self.obj)), 1, "we don't get rid of the stream unless the user explicitly asks to delete it.")
+        eq_(self._redis_backend.zcard(self._backend._get_index_name(self.obj, self.index_name)), 0)
+        eq_(self._redis_backend.scard(self._backend._get_index_collection_name(self.obj)), 1, "we don't get rid of the index unless the user explicitly asks to delete it.")
 
-    def test_delete_stream(self):
-        self._setup_basic_stream()
+    def test_delete_index(self):
+        self._setup_basic_index()
 
-        eq_(self._redis_backend.zcard(self._backend._get_stream_name(self.obj, self.stream_name)), 1)
-        eq_(self._redis_backend.scard(self._backend._get_stream_collection_name(self.obj)), 1)
+        eq_(self._redis_backend.zcard(self._backend._get_index_name(self.obj, self.index_name)), 1)
+        eq_(self._redis_backend.scard(self._backend._get_index_collection_name(self.obj)), 1)
 
-        self._backend.delete_stream(self.obj, self.stream_name)
+        self._backend.delete_index(self.obj, self.index_name)
 
-        ok_(not self._redis_backend.exists(self._backend._get_stream_name(self.obj, self.stream_name)))
-        ok_(not self._redis_backend.exists(self._backend._get_stream_collection_name(self.obj)))
+        ok_(not self._redis_backend.exists(self._backend._get_index_name(self.obj, self.index_name)))
+        ok_(not self._redis_backend.exists(self._backend._get_index_collection_name(self.obj)))
 
-    def test_delete_stream_multiple_streams_at_the_same_time(self):
-        obj = "streams"
-        stream_names = ["profile_stream", "group_stream"]
+    def test_delete_index_multiple_indexes_at_the_same_time(self):
+        obj = "indexes"
+        index_names = ["profile_index", "group_index"]
         activity_name = "activity1234"
         published = datetime.datetime.utcnow()
 
-        self._backend.add_to_stream(obj, stream_names, activity_name, published=published)
+        self._backend.add(obj, index_names, activity_name, published=published)
 
-        eq_(self._redis_backend.zcard(self._backend._get_stream_name(obj, stream_names[0])), 1)
-        eq_(self._redis_backend.zcard(self._backend._get_stream_name(obj, stream_names[1])), 1)
-        eq_(self._redis_backend.scard(self._backend._get_stream_collection_name(obj)), 2)
+        eq_(self._redis_backend.zcard(self._backend._get_index_name(obj, index_names[0])), 1)
+        eq_(self._redis_backend.zcard(self._backend._get_index_name(obj, index_names[1])), 1)
+        eq_(self._redis_backend.scard(self._backend._get_index_collection_name(obj)), 2)
 
-        self._backend.delete_stream(obj, stream_names)
+        self._backend.delete_index(obj, index_names)
 
-        ok_(not self._redis_backend.exists(self._backend._get_stream_name(obj, stream_names[0])))
-        ok_(not self._redis_backend.exists(self._backend._get_stream_name(obj, stream_names[1])))
-        ok_(not self._redis_backend.exists(self._backend._get_stream_collection_name(obj)))
+        ok_(not self._redis_backend.exists(self._backend._get_index_name(obj, index_names[0])))
+        ok_(not self._redis_backend.exists(self._backend._get_index_name(obj, index_names[1])))
+        ok_(not self._redis_backend.exists(self._backend._get_index_collection_name(obj)))
 
-    def test_delete_stream_multiple_streams_some_not_deleted(self):
-        obj = "streams"
-        stream_names = ["profile_stream", "group_stream"]
+    def test_delete_index_multiple_indexes_some_not_deleted(self):
+        obj = "indexes"
+        index_names = ["profile_index", "group_index"]
         activity_name = "activity1234"
         published = datetime.datetime.utcnow()
 
-        self._backend.add_to_stream(obj, stream_names, activity_name, published=published)
+        self._backend.add(obj, index_names, activity_name, published=published)
 
-        eq_(self._redis_backend.zcard(self._backend._get_stream_name(obj, stream_names[0])), 1)
-        eq_(self._redis_backend.zcard(self._backend._get_stream_name(obj, stream_names[1])), 1)
-        eq_(self._redis_backend.scard(self._backend._get_stream_collection_name(obj)), 2)
+        eq_(self._redis_backend.zcard(self._backend._get_index_name(obj, index_names[0])), 1)
+        eq_(self._redis_backend.zcard(self._backend._get_index_name(obj, index_names[1])), 1)
+        eq_(self._redis_backend.scard(self._backend._get_index_collection_name(obj)), 2)
 
-        self._backend.delete_stream(obj, stream_names[0])
+        self._backend.delete_index(obj, index_names[0])
 
-        ok_(not self._redis_backend.exists(self._backend._get_stream_name(obj, stream_names[0])))
-        ok_(self._redis_backend.exists(self._backend._get_stream_name(obj, stream_names[1])))
-        ok_(self._redis_backend.exists(self._backend._get_stream_collection_name(obj)))
-        eq_(self._redis_backend.scard(self._backend._get_stream_collection_name(obj)), 1)
+        ok_(not self._redis_backend.exists(self._backend._get_index_name(obj, index_names[0])))
+        ok_(self._redis_backend.exists(self._backend._get_index_name(obj, index_names[1])))
+        ok_(self._redis_backend.exists(self._backend._get_index_collection_name(obj)))
+        eq_(self._redis_backend.scard(self._backend._get_index_collection_name(obj)), 1)
 
-    def test_delete_stream_stream_object_doesnt_exist(self):
-        #fail silently if the streams/objects don't exist
-        self._backend.delete_stream("non existing", "also does not exist")
+    def test_delete_index_index_object_doesnt_exist(self):
+        #fail silently if the indexes/objects don't exist
+        self._backend.delete_index("non existing", "also does not exist")
 
-    def test_delete_stream_stream_doesnt_exist(self):
+    def test_delete_index_index_doesnt_exist(self):
 
-        self._setup_basic_stream()
+        self._setup_basic_index()
 
-        eq_(self._redis_backend.zcard(self._backend._get_stream_name(self.obj, self.stream_name)), 1)
-        eq_(self._redis_backend.scard(self._backend._get_stream_collection_name(self.obj)), 1)
+        eq_(self._redis_backend.zcard(self._backend._get_index_name(self.obj, self.index_name)), 1)
+        eq_(self._redis_backend.scard(self._backend._get_index_collection_name(self.obj)), 1)
 
-        self._backend.delete_stream(self.obj, "this doesn't really exist")
+        self._backend.delete_index(self.obj, "this doesn't really exist")
 
-        eq_(self._redis_backend.zcard(self._backend._get_stream_name(self.obj, self.stream_name)), 1)
-        eq_(self._redis_backend.scard(self._backend._get_stream_collection_name(self.obj)), 1)
+        eq_(self._redis_backend.zcard(self._backend._get_index_name(self.obj, self.index_name)), 1)
+        eq_(self._redis_backend.scard(self._backend._get_index_collection_name(self.obj)), 1)
 
-    def test_get_stream_items(self):
+    def test_get(self):
         published = datetime.datetime.now()
-        obj = "streams"
-        stream_name = "profile_stream"
+        obj = "indexes"
+        index_name = "profile_index"
 
         for i in xrange(5):
-            self._backend.add_to_stream(obj, stream_name, "activity_after_" + str(i), published=published + datetime.timedelta(seconds=i))
+            self._backend.add(obj, index_name, "activity_after_" + str(i), published=published + datetime.timedelta(seconds=i))
 
         for i in xrange(1, 3):
-            self._backend.add_to_stream(obj, stream_name, "activity_before_" + str(i), published=published - datetime.timedelta(seconds=i))
+            self._backend.add(obj, index_name, "activity_before_" + str(i), published=published - datetime.timedelta(seconds=i))
 
-        #get all activities after the marker
-        result = self._backend.get_stream_items(obj, stream_name, marker=published)
+        #get all values after the marker
+        result = self._backend.get(obj, index_name, marker=published)
 
         eq_(len(result), 3)
         eq_(['activity_after_0'] + ["activity_before_" + str(i) for i in xrange(1, 3)], result)
 
-        #get all activities before the marker
-        result = self._backend.get_stream_items(obj, stream_name, marker=published, after=True)
+        #get all values before the marker
+        result = self._backend.get(obj, index_name, marker=published, after=True)
 
         eq_(len(result), 5)
         eq_(["activity_after_" + str(i) for i in xrange(5)], result)
 
-    def test_get_stream_items_limit(self):
+    def test_get_limit(self):
         published = datetime.datetime.now()
-        obj = "streams"
-        stream_name = "profile_stream"
+        obj = "indexes"
+        index_name = "profile_index"
 
         for i in xrange(5):
-            self._backend.add_to_stream(obj, stream_name, "activity_after_" + str(i), published=published + datetime.timedelta(seconds=i))
+            self._backend.add(obj, index_name, "activity_after_" + str(i), published=published + datetime.timedelta(seconds=i))
 
         for i in xrange(1, 3):
-            self._backend.add_to_stream(obj, stream_name, "activity_before_" + str(i), published=published - datetime.timedelta(seconds=i))
+            self._backend.add(obj, index_name, "activity_before_" + str(i), published=published - datetime.timedelta(seconds=i))
 
-        #get all activities after the marker
-        result = self._backend.get_stream_items(obj, stream_name, marker=published, limit=2)
+        #get all values after the marker
+        result = self._backend.get(obj, index_name, marker=published, limit=2)
 
         eq_(len(result), 2)
         eq_(['activity_after_0', 'activity_before_1'], result)
 
-        #get all activities before the marker
-        result = self._backend.get_stream_items(obj, stream_name, marker=published, after=True, limit=2)
+        #get all values before the marker
+        result = self._backend.get(obj, index_name, marker=published, after=True, limit=2)
 
         eq_(len(result), 2)
         eq_(["activity_after_" + str(i) for i in xrange(2)], result)
 
     @raises(SandsnakeValidationException)
-    def test_get_stream_items_marker_required(self):
-        obj = "streams"
-        stream_name = "profile_stream"
+    def test_get_marker_required(self):
+        obj = "indexes"
+        index_name = "profile_index"
 
-        self._backend.get_stream_items(obj, stream_name)
+        self._backend.get(obj, index_name)
 
-    def test_post_get_stream_items(self):
-        eq_(self._backend._post_get_stream_items([[('act:1', 1,), ('act:2', 2, ), ('act:3', 3)]],\
-            "obj1", "stream1", 123, 20, False, False), [['act:1', 'act:2', 'act:3']])
+    def test_post_get(self):
+        eq_(self._backend._post_get([[('act:1', 1,), ('act:2', 2, ), ('act:3', 3)]],\
+            "obj1", "index1", 123, 20, False, False), [['act:1', 'act:2', 'act:3']])
 
-    def test_post_get_stream_items_(self):
-        eq_(self._backend._post_get_stream_items([[('act:1', 1,), ('act:2', 2, ), ('act:3', 3)]],\
-            "obj1", "stream1", 123, 20, False, True), [[('act:1', 1,), ('act:2', 2, ), ('act:3', 3)]])
+    def test_post_get_(self):
+        eq_(self._backend._post_get([[('act:1', 1,), ('act:2', 2, ), ('act:3', 3)]],\
+            "obj1", "index1", 123, 20, False, True), [[('act:1', 1,), ('act:2', 2, ), ('act:3', 3)]])
 
 
 class TestRedisWithMarkerBackend(object):
@@ -258,147 +258,147 @@ class TestRedisWithMarkerBackend(object):
 
         eq_("%(prefix)sobj:%(obj)s:markers" % {'prefix': self._backend._prefix, 'obj': obj}, self._backend._get_obj_markers_name(obj))
 
-    def test_get_stream_marker_name_default_name(self):
-        stream = "userstream"
+    def test_get_index_marker_name_default_name(self):
+        index = "userindex"
 
-        eq_("stream:%(stream)s:name:%(name)s" % {'stream': stream, 'name': '_ssdefault'}, self._backend._get_stream_marker_name(stream))
+        eq_("index:%(index)s:name:%(name)s" % {'index': index, 'name': '_ssdefault'}, self._backend._get_index_marker_name(index))
 
-    def test_get_stream_marker_name_custom_name(self):
-        stream = "userstream"
+    def test_get_index_marker_name_custom_name(self):
+        index = "userindex"
         marker_name = "custom"
 
-        eq_("stream:%(stream)s:name:%(name)s" % {'stream': stream, 'name': marker_name}, self._backend._get_stream_marker_name(stream, marker_name=marker_name))
+        eq_("index:%(index)s:name:%(name)s" % {'index': index, 'name': marker_name}, self._backend._get_index_marker_name(index, marker_name=marker_name))
 
-    def test_delete_stream_remove_marker(self):
-        obj = "streams"
-        stream_name = "profile_stream"
+    def test_delete_index_remove_marker(self):
+        obj = "indexes"
+        index_name = "profile_index"
         published = datetime.datetime.utcnow()
         timestamp = self._backend._get_timestamp(published)
-        initial_marker_hash = {'stream:ssnake:obj:streams:stream:profile_stream:name:_ssdefault': str(timestamp)}
+        initial_marker_hash = {'index:ssnake:obj:indexes:index:profile_index:name:_ssdefault': str(timestamp)}
 
         self._redis_backend.hmset(self._backend._get_obj_markers_name(obj), initial_marker_hash)
         markers_hash = self._redis_backend.hgetall(self._backend._get_obj_markers_name(obj))
         eq_(initial_marker_hash, markers_hash)
 
-        self._backend.delete_stream(obj, stream_name)
+        self._backend.delete_index(obj, index_name)
         markers_hash = self._redis_backend.hgetall(self._backend._get_obj_markers_name(obj))
         eq_({}, markers_hash)
 
-    def test_delete_multiple_streams_at_the_same_time_markers_updated(self):
-        obj = "streams"
-        stream_names = ["profile_stream", "group_stream"]
+    def test_delete_multiple_indexes_at_the_same_time_markers_updated(self):
+        obj = "indexes"
+        index_names = ["profile_index", "group_index"]
         published = datetime.datetime.utcnow()
         timestamp = self._backend._get_timestamp(published)
         initial_marker_hash = {
-            'stream:ssnake:obj:streams:stream:profile_stream:name:_ssdefault': str(timestamp), \
-            'stream:ssnake:obj:streams:stream:group_stream:name:_ssdefault': str(timestamp)
+            'index:ssnake:obj:indexes:index:profile_index:name:_ssdefault': str(timestamp), \
+            'index:ssnake:obj:indexes:index:group_index:name:_ssdefault': str(timestamp)
         }
 
         self._redis_backend.hmset(self._backend._get_obj_markers_name(obj), initial_marker_hash)
         markers_hash = self._redis_backend.hgetall(self._backend._get_obj_markers_name(obj))
         eq_(initial_marker_hash, markers_hash)
 
-        self._backend.delete_stream(obj, stream_names)
+        self._backend.delete_index(obj, index_names)
         markers_hash = self._redis_backend.hgetall(self._backend._get_obj_markers_name(obj))
         eq_({}, markers_hash)
 
-    def test_get_stream_items_before_marker_doesnt_updates_marker(self):
+    def test_get_before_marker_doesnt_updates_marker(self):
         published = datetime.datetime.now()
-        obj = "streams"
-        stream_name = "profile_stream"
+        obj = "indexes"
+        index_name = "profile_index"
 
         for i in xrange(5):
-            self._backend.add_to_stream(obj, stream_name, "activity_after_" + str(i), published=published + datetime.timedelta(seconds=i))
+            self._backend.add(obj, index_name, "activity_after_" + str(i), published=published + datetime.timedelta(seconds=i))
 
         for i in xrange(1, 3):
-            self._backend.add_to_stream(obj, stream_name, "activity_before_" + str(i), published=published - datetime.timedelta(seconds=i))
+            self._backend.add(obj, index_name, "activity_before_" + str(i), published=published - datetime.timedelta(seconds=i))
 
         eq_(self._redis_backend.hget(self._backend._get_obj_markers_name(obj),\
-            self._backend._get_stream_marker_name(stream_name)), None)
+            self._backend._get_index_marker_name(index_name)), None)
 
-        #get all activities after the marker
-        result = self._backend.get_stream_items(obj, stream_name, marker=published)
+        #get all values after the marker
+        result = self._backend.get(obj, index_name, marker=published)
 
         eq_(len(result), 3)
         eq_(self._redis_backend.hget(self._backend._get_obj_markers_name(obj),\
-            self._backend._get_stream_marker_name(stream_name)), None)
+            self._backend._get_index_marker_name(index_name)), None)
 
-    def test_get_stream_items_after_marker_updates_marker(self):
+    def test_get_after_marker_updates_marker(self):
         published = datetime.datetime.now()
-        obj = "streams"
-        stream_name = "profile_stream"
+        obj = "indexes"
+        index_name = "profile_index"
 
         for i in xrange(5):
-            self._backend.add_to_stream(obj, stream_name, "activity_after_" + str(i), published=published + datetime.timedelta(seconds=i))
+            self._backend.add(obj, index_name, "activity_after_" + str(i), published=published + datetime.timedelta(seconds=i))
 
         for i in xrange(1, 5):
-            self._backend.add_to_stream(obj, stream_name, "activity_before_" + str(i), published=published - datetime.timedelta(seconds=i))
+            self._backend.add(obj, index_name, "activity_before_" + str(i), published=published - datetime.timedelta(seconds=i))
 
         eq_(self._redis_backend.hget(self._backend._get_obj_markers_name(obj),\
-            self._backend._get_stream_marker_name(stream_name)), None)
+            self._backend._get_index_marker_name(index_name)), None)
 
-        #get all activities before the marker
-        result = self._backend.get_stream_items(obj, stream_name, marker=published, after=True, limit=3)
+        #get all values before the marker
+        result = self._backend.get(obj, index_name, marker=published, after=True, limit=3)
 
         eq_(len(result), 3)
         eq_(long(self._redis_backend.hget(self._backend._get_obj_markers_name(obj),\
-            self._backend._get_stream_marker_name(stream_name))), self._backend._get_timestamp(published + datetime.timedelta(seconds=2)))
+            self._backend._get_index_marker_name(index_name))), self._backend._get_timestamp(published + datetime.timedelta(seconds=2)))
 
     def test_get_default_marker(self):
         published = datetime.datetime.now()
-        obj = "streams"
-        stream_name = "profile_stream"
+        obj = "indexes"
+        index_name = "profile_index"
 
         for i in xrange(5):
-            self._backend.add_to_stream(obj, stream_name, "activity_after_" + str(i), published=published + datetime.timedelta(seconds=i))
+            self._backend.add(obj, index_name, "activity_after_" + str(i), published=published + datetime.timedelta(seconds=i))
 
         for i in xrange(1, 5):
-            self._backend.add_to_stream(obj, stream_name, "activity_before_" + str(i), published=published - datetime.timedelta(seconds=i))
+            self._backend.add(obj, index_name, "activity_before_" + str(i), published=published - datetime.timedelta(seconds=i))
 
         #adding stuff does not change the default marker
-        eq_(self._backend.get_default_marker(obj, stream_name), 0)
+        eq_(self._backend.get_default_marker(obj, index_name), 0)
 
-        self._backend.get_stream_items(obj, stream_name, marker=published, after=True, limit=3)
+        self._backend.get(obj, index_name, marker=published, after=True, limit=3)
 
         #but retrieving stuff does
-        eq_(self._backend.get_default_marker(obj, stream_name), self._backend._get_timestamp(published + datetime.timedelta(seconds=2)))
+        eq_(self._backend.get_default_marker(obj, index_name), self._backend._get_timestamp(published + datetime.timedelta(seconds=2)))
 
     def test_get_markers_single_marker(self):
-        obj = "streams"
-        stream_name = "profile_stream"
+        obj = "indexes"
+        index_name = "profile_index"
         marker_name = "test marker"
 
-        self._redis_backend.hmset(self._backend._get_obj_markers_name(obj), {self._backend._get_stream_marker_name(stream_name, marker_name=marker_name): 25L})
+        self._redis_backend.hmset(self._backend._get_obj_markers_name(obj), {self._backend._get_index_marker_name(index_name, marker_name=marker_name): 25L})
 
-        marker_value = self._backend.get_markers(obj, stream_name, marker_name)
+        marker_value = self._backend.get_markers(obj, index_name, marker_name)
         eq_(marker_value, 25L)
 
     def test_get_markers_multiple_marker(self):
-        obj = "streams"
-        stream_name = "profile_stream"
+        obj = "indexes"
+        index_name = "profile_index"
         marker_names_dict = {"test marker": 25L, "test marker 2": 40L, "test marker 3": 50L}
 
         parsed_markers_dict = {}
         for key, value in marker_names_dict.items():
-            parsed_markers_dict[self._backend._get_stream_marker_name(stream_name, marker_name=key)] = value
+            parsed_markers_dict[self._backend._get_index_marker_name(index_name, marker_name=key)] = value
         self._redis_backend.hmset(self._backend._get_obj_markers_name(obj), parsed_markers_dict)
 
         markers = marker_names_dict.keys()
-        marker_values = self._backend.get_markers(obj, stream_name, markers)
+        marker_values = self._backend.get_markers(obj, index_name, markers)
         for marker, marker_value in zip(markers, marker_values):
             eq_(marker_value, marker_names_dict[marker])
 
     def test_set_markers_multiple_marker(self):
-        obj = "streams"
-        stream_name = "profile_stream"
+        obj = "indexes"
+        index_name = "profile_index"
         marker_names_dict = {"test marker": 25L, "test marker 2": 40L, "test marker 3": 50L}
 
-        self._backend.set_markers(obj, stream_name, marker_names_dict)
+        self._backend.set_markers(obj, index_name, marker_names_dict)
 
         markers = marker_names_dict.keys()
         for marker in markers:
             eq_(long(self._redis_backend.hget(self._backend._get_obj_markers_name(obj),\
-                            self._backend._get_stream_marker_name(stream_name, marker_name=marker))), marker_names_dict[marker])
+                            self._backend._get_index_marker_name(index_name, marker_name=marker))), marker_names_dict[marker])
 
 
 class TestRedisWithBubblingBackend(object):
@@ -420,14 +420,14 @@ class TestRedisWithBubblingBackend(object):
 
     def test_clear_all(self):
         published = datetime.datetime.utcnow()
-        obj = "streams"
-        stream_name = "profile_stream"
+        obj = "indexes"
+        index_name = "profile_index"
 
         for i in xrange(2):
-            self._backend.add_to_stream(obj, stream_name, "activity_after_" + str(i), published=published + datetime.timedelta(seconds=i))
+            self._backend.add(obj, index_name, "activity_after_" + str(i), published=published + datetime.timedelta(seconds=i))
 
         for i in xrange(1, 2):
-            self._backend.add_to_stream(obj, stream_name, "activity_before_" + str(i), published=published - datetime.timedelta(seconds=i))
+            self._backend.add(obj, index_name, "activity_before_" + str(i), published=published - datetime.timedelta(seconds=i))
 
         redis_client = self._backend.get_backend()
 
@@ -437,38 +437,38 @@ class TestRedisWithBubblingBackend(object):
 
         ok_(len(list(itertools.chain(*redis_client.keys()))) == 0)
 
-    def test_bubble_activities(self):
+    def test_bubble_values(self):
         published = datetime.datetime.utcnow()
-        obj = "streams"
-        stream_name = "profile_stream"
+        obj = "indexes"
+        index_name = "profile_index"
 
         for i in xrange(5):
-            self._backend.add_to_stream(obj, stream_name, "activity_after_" + str(i), published=published + datetime.timedelta(seconds=i))
+            self._backend.add(obj, index_name, "activity_after_" + str(i), published=published + datetime.timedelta(seconds=i))
 
         for i in xrange(1, 5):
-            self._backend.add_to_stream(obj, stream_name, "activity_before_" + str(i), published=published - datetime.timedelta(seconds=i))
+            self._backend.add(obj, index_name, "activity_before_" + str(i), published=published - datetime.timedelta(seconds=i))
 
         eq_(self._redis_backend.hget(self._backend._get_obj_markers_name(obj),\
-            self._backend._get_stream_marker_name(stream_name)), None)
+            self._backend._get_index_marker_name(index_name)), None)
 
-        #get all activities before the marker
-        result = self._backend.get_stream_items(obj, stream_name, marker=published, after=True, limit=3)
+        #get all values before the marker
+        result = self._backend.get(obj, index_name, marker=published, after=True, limit=3)
 
         eq_(len(result), 3)
         eq_(['activity_after_0', 'activity_after_1', 'activity_after_2'], result)
 
-        self._backend.bubble_activities(obj, stream_name, {'activity_after_2': published + datetime.timedelta(seconds=20)})
+        self._backend.bubble_values(obj, index_name, {'activity_after_2': published + datetime.timedelta(seconds=20)})
 
-        #get all activities before the marker
-        result = self._backend.get_stream_items(obj, stream_name, marker=published, after=True, limit=3)
+        #get all values before the marker
+        result = self._backend.get(obj, index_name, marker=published, after=True, limit=3)
 
         eq_(len(result), 3)
         eq_(['activity_after_0', 'activity_after_1', 'activity_after_3'], result)
 
-        self._backend.bubble_activities(obj, stream_name, {'activity_after_3': published + datetime.timedelta(seconds=21), 'activity_after_0': published + datetime.timedelta(seconds=2)})
+        self._backend.bubble_values(obj, index_name, {'activity_after_3': published + datetime.timedelta(seconds=21), 'activity_after_0': published + datetime.timedelta(seconds=2)})
 
-        #get all activities before the marker
-        result = self._backend.get_stream_items(obj, stream_name, marker=published, after=True, limit=3)
+        #get all values before the marker
+        result = self._backend.get(obj, index_name, marker=published, after=True, limit=3)
 
         eq_(len(result), 3)
         eq_(['activity_after_1', 'activity_after_0', 'activity_after_4'], result)

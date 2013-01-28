@@ -22,9 +22,8 @@ from nydus.db import create_cluster
 
 from dateutil.parser import parse
 
+import time
 import datetime
-import calendar
-import uuid
 import itertools
 
 
@@ -75,16 +74,16 @@ class Redis(BaseSunspearBackend):
                 if key.startswith(self._prefix):
                     conn.delete(key)
 
-    def add_to_stream(self, obj, stream_name, activity, published=None):
+    def add(self, obj, index_name, activity, published=None):
         """
-        Adds an activity to a stream(s) of an object.
+        Adds an activity to a index(s) of an object.
 
         :type obj: string
-        :param obj: string representation of the object for who the stream belongs to
-        :type stream_name: string or list of strings
-        :param stream_name: the name of the stream(s) you want to add the activity to
+        :param obj: string representation of the object for who the index belongs to
+        :type index_name: string or list of strings
+        :param index_name: the name of the index(s) you want to add the activity to
         :type activity: string
-        :param activity: string representation of the activity you want to add to the stream(s)
+        :param activity: string representation of the activity you want to add to the index(s)
         :type published: datetime
         :param published: the time this activity was published
         """
@@ -93,143 +92,143 @@ class Redis(BaseSunspearBackend):
         published = self._parse_date(published)
         timestamp = self._get_timestamp(published)
 
-        streams = self._listify(stream_name)
-        streams_added = []
+        indexes = self._listify(index_name)
+        indexes_added = []
 
         with self._backend.map() as conn:
-            for stream in streams:
-                stream_name = self._get_stream_name(obj, stream)
-                streams_added.append(stream_name)
-                conn.zadd(stream_name, activity, timestamp)
-                conn.sadd(self._get_stream_collection_name(obj), stream)
+            for index in indexes:
+                index_name = self._get_index_name(obj, index)
+                indexes_added.append(index_name)
+                conn.zadd(index_name, activity, timestamp)
+                conn.sadd(self._get_index_collection_name(obj), index)
 
-        self._post_add_to_stream(obj, streams_added, activity, timestamp)
+        self._post_add(obj, indexes_added, activity, timestamp)
 
-    def delete_from_stream(self, obj, stream_name, activity):
+    def remove(self, obj, index_name, activity):
         """
-        Deletes an activity from a stream or a list of streams that belongs to a object
+        Deletes an activity from a index or a list of indexes that belongs to a object
 
         :type obj: string
-        :param obj: string representation of the object for who the stream belongs to
-        :type stream_name: string or list of strings
-        :param stream_name: the name of the stream(s) you want to delete the activity from
+        :param obj: string representation of the object for who the index belongs to
+        :type index_name: string or list of strings
+        :param index_name: the name of the index(s) you want to delete the activity from
         :type activity: string
-        :param activity: string representation of the activity you want to add to the stream(s)
+        :param activity: string representation of the activity you want to add to the index(s)
         """
-        streams = self._listify(stream_name)
-        streams_removed = []
+        indexes = self._listify(index_name)
+        indexes_removed = []
 
         with self._backend.map() as conn:
-            for stream in streams:
-                stream_name = self._get_stream_name(obj, stream)
-                streams_removed.append(stream_name)
-                conn.zrem(stream_name, activity)
+            for index in indexes:
+                index_name = self._get_index_name(obj, index)
+                indexes_removed.append(index_name)
+                conn.zrem(index_name, activity)
 
-        self._post_delete_from_stream(obj, streams_removed, activity)
+        self._post_remove(obj, indexes_removed, activity)
 
-    def delete_stream(self, obj, stream_name):
+    def delete_index(self, obj, index_name):
         """
-        Completely deletes the stream for an object
+        Completely deletes the index for an object
 
         :type obj: string
-        :param obj: string representation of the object for who the stream belongs to
-        :type stream_name: string or list of strings
-        :param stream_name: the name of the stream(s) you want to delete
+        :param obj: string representation of the object for who the index belongs to
+        :type index_name: string or list of strings
+        :param index_name: the name of the index(s) you want to delete
         """
-        streams = self._listify(stream_name)
-        streams_removed = []
+        indexes = self._listify(index_name)
+        indexes_removed = []
 
         with self._backend.map() as conn:
-            for stream in streams:
-                stream_name = self._get_stream_name(obj, stream)
-                streams_removed.append(stream_name)
+            for index in indexes:
+                index_name = self._get_index_name(obj, index)
+                indexes_removed.append(index_name)
 
-                conn.delete(stream_name)
-                conn.srem(self._get_stream_collection_name(obj), stream)
+                conn.delete(index_name)
+                conn.srem(self._get_index_collection_name(obj), index)
         #If the list is empty, there is no point in taking up more room.
-        if self._backend.scard(self._get_stream_collection_name(obj)) == 0:
-            self._backend.delete(self._get_stream_collection_name(obj))
+        if self._backend.scard(self._get_index_collection_name(obj)) == 0:
+            self._backend.delete(self._get_index_collection_name(obj))
 
-        self._post_delete_stream(obj, streams_removed)
+        self._post_delete_index(obj, indexes_removed)
 
-    def get_stream_items(self, obj, stream_name, marker=None, limit=30, after=False, withscores=False, **kwargs):
+    def get(self, obj, index_name, marker=None, limit=30, after=False, withscores=False, **kwargs):
         """
-        Gets a list of activities. Returns a maximum of ``limit`` stream items. If ``after`` is ``True``
-        returns a list of activities after the marker.
+        Gets a list of values. Returns a maximum of ``limit`` index items. If ``after`` is ``True``
+        returns a list of values after the marker.
 
         :type obj: string
-        :param obj: string representation of the object for who the stream belongs to
-        :type stream_name: string or list of strings
-        :param stream_name: the name of the stream(s) you want to delete
+        :param obj: string representation of the object for who the index belongs to
+        :type index_name: string or list of strings
+        :param index_name: the name of the index(s) you want to delete
         :type marker: string or datetime representing a date and a time
-        :param marker: the starting point to retrieve activities from
+        :param marker: the starting point to retrieve values from
         :type limit: int
-        :param limit: the maximum number of activities to get
+        :param limit: the maximum number of values to get
         :type after: boolean
-        :param after: if ``True`` gets activities after ``marker`` otherwise gets it before ``marker``
+        :param after: if ``True`` gets values after ``marker`` otherwise gets it before ``marker``
         :type withscores: boolean
         :param withscores: if ``True``, returns results as tuples where the second item is the score
-        for that stream item.
+        for that index item.
         """
         if marker is None:
-            raise SandsnakeValidationException("You must provide a marker to get stream items.")
+            raise SandsnakeValidationException("You must provide a marker to get index items.")
         marker = self._parse_date(marker)
         timestamp = self._get_timestamp(marker)
 
-        streams = self._listify(stream_name)
+        indexes = self._listify(index_name)
 
         results = []
         with self._backend.map() as conn:
-            for stream in streams:
+            for index in indexes:
                 if after:
-                    results.append(conn.zrangebyscore(self._get_stream_name(obj, stream), timestamp, \
+                    results.append(conn.zrangebyscore(self._get_index_name(obj, index), timestamp, \
                         "+inf", start=0, num=limit, withscores=True, score_cast_func=long))
                 else:
-                    results.append(conn.zrevrangebyscore(self._get_stream_name(obj, stream), timestamp, \
+                    results.append(conn.zrevrangebyscore(self._get_index_name(obj, index), timestamp, \
                         "-inf", start=0, num=limit, withscores=True, score_cast_func=long))
 
-        results = self._post_get_stream_items(results, obj, stream_name, marker, limit, \
+        results = self._post_get(results, obj, index_name, marker, limit, \
             after, withscores, **kwargs)
 
         if len(results) == 1:
             return results[0]
         return results
 
-    def _post_get_stream_items(self, results, obj, stream_name, marker, limit, after, withscores, **kwargs):
+    def _post_get(self, results, obj, index_name, marker, limit, after, withscores, **kwargs):
         """
-        Returns a list of activities after processing it.
+        Returns a list of values after processing it.
 
         :type obj: string
-        :param obj: string representation of the object for who the stream belongs to
-        :type stream_name: string or list of strings
-        :param stream_name: the name of the stream(s) you want to delete
+        :param obj: string representation of the object for who the index belongs to
+        :type index_name: string or list of strings
+        :param index_name: the name of the index(s) you want to delete
         :type marker: string or datetime representing a date and a time
-        :param marker: the starting point to retrieve activities from
+        :param marker: the starting point to retrieve values from
         :type limit: int
-        :param limit: the maximum number of activities to get
+        :param limit: the maximum number of values to get
         :type after: boolean
-        :param after: if ``True`` gets activities after ``marker`` otherwise gets it before ``marker``
+        :param after: if ``True`` gets values after ``marker`` otherwise gets it before ``marker``
         :type withscores: boolean
         :param withscores: if ``True``, returns results as tuples where the second item is the score
-        for that stream item.
+        for that index item.
         """
         if withscores:
-            processed_activities = results
+            processed_values = results
         else:
-            processed_activities = []
+            processed_values = []
             for result in results:
-                processed_activities.append(map(lambda x: x[0], result))
+                processed_values.append(map(lambda x: x[0], result))
 
-        return processed_activities
+        return processed_values
 
-    def _post_add_to_stream(self, obj, streams, activity, timestamp):
+    def _post_add(self, obj, indexes, activity, timestamp):
         """
-        Called after an activity has been added to streams.
+        Called after an activity has been added to indexes.
 
         :type obj: string
-        :param obj: string representation of the object for who the stream belongs to
-        :type streams: list
-        :param streams: a list of ``streams`` to which the ``activity`` has been added
+        :param obj: string representation of the object for who the index belongs to
+        :type indexes: list
+        :param indexes: a list of ``indexes`` to which the ``activity`` has been added
         :type activity: string
         :param activity: the name of the activity
         :type timestamp: the score of the activity
@@ -237,53 +236,53 @@ class Redis(BaseSunspearBackend):
         """
         pass
 
-    def _post_delete_from_stream(self, obj, streams, activity):
+    def _post_remove(self, obj, indexes, activity):
         """
-        Called after ``activity`` has been removed from ``streams``
+        Called after ``activity`` has been removed from ``indexes``
 
         :type obj: string
-        :param obj: string representation of the object for who the stream belongs to
-        :type streams: list
-        :param streams: a list of ``streams`` to which the ``activity`` has been added
+        :param obj: string representation of the object for who the index belongs to
+        :type indexes: list
+        :param indexes: a list of ``indexes`` to which the ``activity`` has been added
         :type activity: string
         :param activity: the name of the activity
         """
         pass
 
-    def _post_delete_stream(self, obj, streams):
+    def _post_delete_index(self, obj, indexes):
         """
-        Called after ``streams`` have been deleted.
+        Called after ``indexes`` have been deleted.
 
         :type obj: string
-        :param obj: string representation of the object for who the stream belongs to
-        :type streams: list
-        :param streams: a list of ``streams`` to which the ``activity`` has been added
+        :param obj: string representation of the object for who the index belongs to
+        :type indexes: list
+        :param indexes: a list of ``indexes`` to which the ``activity`` has been added
         """
         pass
 
-    def _get_stream_name(self, obj, stream):
+    def _get_index_name(self, obj, index):
         """
-        Gets the unique stream name for the obj stream pair
+        Gets the unique index name for the obj index pair
 
         :type obj: string
-        :param obj: string representation of the object for who the stream belongs to
-        :type stream_name: string
-        :param stream_name: the name of the stream
+        :param obj: string representation of the object for who the index belongs to
+        :type index_name: string
+        :param index_name: the name of the index
         """
-        return "%(prefix)sobj:%(obj)s:stream:%(stream)s" % {'prefix': self._prefix, 'obj': obj, 'stream': stream}
+        return "%(prefix)sobj:%(obj)s:index:%(index)s" % {'prefix': self._prefix, 'obj': obj, 'index': index}
 
-    def _get_stream_collection_name(self, obj):
+    def _get_index_collection_name(self, obj):
         """
-        Gets the unique name to the set that has all this objects streams:
+        Gets the unique name to the set that has all this objects indexes:
 
         :type obj: string
         :param obj: string representation of the object
         """
-        return "%(prefix)s%(obj)s:streams" % {'prefix': self._prefix, 'obj': obj}
+        return "%(prefix)s%(obj)s:indexes" % {'prefix': self._prefix, 'obj': obj}
 
     def _listify(self, list_or_string):
         """
-        A simple helper that converts a single ``stream_name`` into a list of 1
+        A simple helper that converts a single ``index_name`` into a list of 1
 
         :type list_or_string: string or list
         :param list_or_string: the name of things as a string or a list of strings
@@ -319,10 +318,7 @@ class Redis(BaseSunspearBackend):
         """
         returns a unix timestamp representing the datetime object
         """
-        return long(str(calendar.timegm(datetime.timetuple())) + datetime.strftime("%f")[:4])
-
-    def _get_new_uuid(self):
-        return uuid.uuid1().hex
+        return long((time.mktime(datetime.timetuple())) * 1000)
 
 
 class RedisWithMarker(Redis):
@@ -330,37 +326,37 @@ class RedisWithMarker(Redis):
         super(RedisWithMarker, self).__init__(*args, **kwargs)
         self._default_marker_name = kwargs.get('default_marker_name', "_ssdefault")
 
-    def set_markers(self, obj, stream_name, markers_dict):
+    def set_markers(self, obj, index_name, markers_dict):
         """
-        Allows you to set custom markers for a ``stream`` belonging to an ``obj`
+        Allows you to set custom markers for a ``index`` belonging to an ``obj`
 
         :type obj: string
-        :param obj: string representation of the object for who the stream belongs to
-        :type stream_name: string
-        :param stream_name: the name of the stream you want to update the markers for
+        :param obj: string representation of the object for who the index belongs to
+        :type index_name: string
+        :param index_name: the name of the index you want to update the markers for
         :type markers_dict: dict
         :param markers_dict: a dictionary when they keys are the marker names and values are the marker's new value. If the marker does not exist, it will be created
         """
         parsed_marker_dict = {}
         for key, value in markers_dict.items():
-            parsed_marker_dict[self._get_stream_marker_name(stream_name, marker_name=key)] = value
+            parsed_marker_dict[self._get_index_marker_name(index_name, marker_name=key)] = value
 
         self._backend.hmset(self._get_obj_markers_name(obj), parsed_marker_dict)
 
-    def get_markers(self, obj, stream_name, marker, **kwargs):
+    def get_markers(self, obj, index_name, marker, **kwargs):
         """
-        Gets custom markers for a ``stream`` belonging to an ``obj``
+        Gets custom markers for a ``index`` belonging to an ``obj``
 
         :type obj: string
-        :param obj: string representation of the object for who the stream belongs to
-        :type stream_name: string
-        :param stream_name: the name of the stream you want to update the markers for
+        :param obj: string representation of the object for who the index belongs to
+        :type index_name: string
+        :param index_name: the name of the index you want to update the markers for
         :type marker: string or list
         :param marker: a string or a list of strings of the name of the markers you want
         """
         markers = self._listify(marker)
 
-        marker_names = map(lambda marker: self._get_stream_marker_name(stream_name, marker_name=marker), markers)
+        marker_names = map(lambda marker: self._get_index_marker_name(index_name, marker_name=marker), markers)
         results = self._backend.hmget(self._get_obj_markers_name(obj), marker_names)
 
         parsed_results = [long(result) for result in results]
@@ -368,64 +364,64 @@ class RedisWithMarker(Redis):
             return parsed_results[0]
         return parsed_results
 
-    def get_default_marker(self, obj, stream_name, **kwargs):
+    def get_default_marker(self, obj, index_name, **kwargs):
         """
-        Gets the default marker for the ``stream`` belonging to an ``obj``
+        Gets the default marker for the ``index`` belonging to an ``obj``
 
         :type obj: string
-        :param obj: string representation of the object for who the stream belongs to
-        :type stream_name: string
-        :param stream_name: the name of the stream you want to update the markers for
+        :param obj: string representation of the object for who the index belongs to
+        :type index_name: string
+        :param index_name: the name of the index you want to update the markers for
         """
-        marker_name = self._get_stream_marker_name(stream_name)
+        marker_name = self._get_index_marker_name(index_name)
         result = self._backend.hget(self._get_obj_markers_name(obj), marker_name)
 
         return 0L if result is None else long(result)
 
-    def _post_delete_stream(self, obj, streams):
+    def _post_delete_index(self, obj, indexes):
         """
-        Called after ``streams`` have been deleted.
+        Called after ``indexes`` have been deleted.
 
         :type obj: string
-        :param obj: string representation of the object for who the stream belongs to
-        :type streams: list
-        :param streams: a list of ``streams`` to which the ``activity`` has been added
+        :param obj: string representation of the object for who the index belongs to
+        :type indexes: list
+        :param indexes: a list of ``indexes`` to which the ``activity`` has been added
         """
-        super(RedisWithMarker, self)._post_delete_stream(obj, streams)
+        super(RedisWithMarker, self)._post_delete_index(obj, indexes)
         with self._backend.map() as conn:
-            for stream in streams:
-                conn.hdel(self._get_obj_markers_name(obj), self._get_stream_marker_name(stream))
+            for index in indexes:
+                conn.hdel(self._get_obj_markers_name(obj), self._get_index_marker_name(index))
 
-    def _post_get_stream_items(self, results, obj, stream_name, marker, limit, after, withscores, **kwargs):
+    def _post_get(self, results, obj, index_name, marker, limit, after, withscores, **kwargs):
         """
-        Updates the default marker for streams.
+        Updates the default marker for indexes.
 
         :type results: list
-        :param results: list of activities for each of the stream
+        :param results: list of values for each of the index
         :type obj: string
-        :param obj: string representation of the object for who the stream belongs to
-        :type stream_name: string or list of strings
-        :param stream_name: the name of the stream(s) you want to delete
+        :param obj: string representation of the object for who the index belongs to
+        :type index_name: string or list of strings
+        :param index_name: the name of the index(s) you want to delete
         :type marker: string or datetime representing a date and a time
-        :param marker: the starting point to retrieve activities from
+        :param marker: the starting point to retrieve values from
         :type limit: int
-        :param limit: the maximum number of activities to get
+        :param limit: the maximum number of values to get
         :type after: boolean
-        :param after: if ``True`` gets activities after ``marker`` otherwise gets it before ``marker``
+        :param after: if ``True`` gets values after ``marker`` otherwise gets it before ``marker``
         :type withscores: boolean
         :param withscores: if ``True``, returns results as tuples where the second item is the score
-        for that stream item.
+        for that index item.
         """
-        streams = self._listify(stream_name)
+        indexes = self._listify(index_name)
 
         if after:
             with self._backend.map() as conn:
-                for index, stream in enumerate(streams):
+                for index, index_name in enumerate(indexes):
                     if results[index]:
                         conn.hset(self._get_obj_markers_name(obj),\
-                            self._get_stream_marker_name(stream), results[index][-1][1])
+                            self._get_index_marker_name(index_name), results[index][-1][1])
 
-        return super(RedisWithMarker, self)._post_get_stream_items(results, obj, stream_name, marker, \
+        return super(RedisWithMarker, self)._post_get(results, obj, index_name, marker, \
             limit, after, withscores, **kwargs)
 
     def _get_obj_markers_name(self, obj):
@@ -437,37 +433,37 @@ class RedisWithMarker(Redis):
         """
         return "%(prefix)sobj:%(obj)s:markers" % {'prefix': self._prefix, 'obj': obj}
 
-    def _get_stream_marker_name(self, stream, marker_name=None):
+    def _get_index_marker_name(self, index, marker_name=None):
         """
-        Gets the unique name of the marker for the stream. The name of the default marker for the
-        stream is ``default``
+        Gets the unique name of the marker for the index. The name of the default marker for the
+        index is ``default``
 
-        :type stream: string
-        :param stream: a unique string identifing a stream
+        :type index: string
+        :param index: a unique string identifing a index
         :type marker_name: string
-        :param marker_name: the name of the marker for this stream. The default name is ``default``
+        :param marker_name: the name of the marker for this index. The default name is ``default``
         """
         marker_name = marker_name if marker_name is not None else self._default_marker_name
-        return "stream:%(stream)s:name:%(name)s" % {'stream': stream, 'name': marker_name}
+        return "index:%(index)s:name:%(name)s" % {'index': index, 'name': marker_name}
 
 
 class RedisWithBubbling(RedisWithMarker):
 
-    def bubble_activities(self, obj, stream_name, activities_dict):
+    def bubble_values(self, obj, index_name, values_dict):
         """
-        Moves activities up and down the sorted set based on score (in most cases, a timestamp)
+        Moves values up and down the sorted set based on score (in most cases, a timestamp)
         **NOTE:** If you decide to use timestamps, use UTC so you don't get screwed over by timezones.
 
         :type obj: string
         :param obj: a unique string identifing the object
-        :type stream_name: string
-        :param stream_name: a unique string identifing a stream
-        :type activities_dict: dict
-        :param activities_dict: a dictionary where keys are the keys for the activity and values are the new
+        :type index_name: string
+        :param index_name: a unique string identifing a index
+        :type values_dict: dict
+        :param values_dict: a dictionary where keys are the keys for the activity and values are the new
         score for the activity. You can pass ``None`` as the score for any activity and it will assign the score
         to the current utc timestamp.
         """
-        for key, value in activities_dict.items():
+        for key, value in values_dict.items():
             #we we did not provide a custom score, then just set it the the current timestamp
             if value is None:
                 score = self._get_timestamp(datetime.datetime.utcnow())
@@ -477,6 +473,6 @@ class RedisWithBubbling(RedisWithMarker):
                     score = long(value)
                 except (ValueError, TypeError):
                     score = self._get_timestamp(self._parse_date(date=value))
-            activities_dict[key] = score
+            values_dict[key] = score
 
-        self._backend.zadd(self._get_stream_name(obj, stream_name), **activities_dict)
+        self._backend.zadd(self._get_index_name(obj, index_name), **values_dict)
