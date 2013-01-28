@@ -392,38 +392,6 @@ class RedisWithMarker(Redis):
             for index in indexes:
                 conn.hdel(self._get_obj_markers_name(obj), self._get_index_marker_name(index))
 
-    def _post_get(self, results, obj, index_name, marker, limit, after, withscores, **kwargs):
-        """
-        Updates the default marker for indexes.
-
-        :type results: list
-        :param results: list of values for each of the index
-        :type obj: string
-        :param obj: string representation of the object for who the index belongs to
-        :type index_name: string or list of strings
-        :param index_name: the name of the index(s) you want to delete
-        :type marker: string or datetime representing a date and a time
-        :param marker: the starting point to retrieve values from
-        :type limit: int
-        :param limit: the maximum number of values to get
-        :type after: boolean
-        :param after: if ``True`` gets values after ``marker`` otherwise gets it before ``marker``
-        :type withscores: boolean
-        :param withscores: if ``True``, returns results as tuples where the second item is the score
-        for that index item.
-        """
-        indexes = self._listify(index_name)
-
-        if after:
-            with self._backend.map() as conn:
-                for index, index_name in enumerate(indexes):
-                    if results[index]:
-                        conn.hset(self._get_obj_markers_name(obj),\
-                            self._get_index_marker_name(index_name), results[index][-1][1])
-
-        return super(RedisWithMarker, self)._post_get(results, obj, index_name, marker, \
-            limit, after, withscores, **kwargs)
-
     def _get_obj_markers_name(self, obj):
         """
         Gets the unique name of the hash which stores the markers for this object

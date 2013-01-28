@@ -323,27 +323,6 @@ class TestRedisWithMarkerBackend(object):
         eq_(self._redis_backend.hget(self._backend._get_obj_markers_name(obj),\
             self._backend._get_index_marker_name(index_name)), None)
 
-    def test_get_after_marker_updates_marker(self):
-        published = datetime.datetime.now()
-        obj = "indexes"
-        index_name = "profile_index"
-
-        for i in xrange(5):
-            self._backend.add(obj, index_name, "activity_after_" + str(i), published=published + datetime.timedelta(seconds=i))
-
-        for i in xrange(1, 5):
-            self._backend.add(obj, index_name, "activity_before_" + str(i), published=published - datetime.timedelta(seconds=i))
-
-        eq_(self._redis_backend.hget(self._backend._get_obj_markers_name(obj),\
-            self._backend._get_index_marker_name(index_name)), None)
-
-        #get all values before the marker
-        result = self._backend.get(obj, index_name, marker=published, after=True, limit=3)
-
-        eq_(len(result), 3)
-        eq_(long(self._redis_backend.hget(self._backend._get_obj_markers_name(obj),\
-            self._backend._get_index_marker_name(index_name))), self._backend._get_timestamp(published + datetime.timedelta(seconds=2)))
-
     def test_get_default_marker(self):
         published = datetime.datetime.now()
         obj = "indexes"
@@ -360,8 +339,8 @@ class TestRedisWithMarkerBackend(object):
 
         self._backend.get(obj, index_name, marker=published, after=True, limit=3)
 
-        #but retrieving stuff does
-        eq_(self._backend.get_default_marker(obj, index_name), self._backend._get_timestamp(published + datetime.timedelta(seconds=2)))
+        #retrieving stuff doesn't either, buy default
+        eq_(self._backend.get_default_marker(obj, index_name), 0)
 
     def test_get_markers_single_marker(self):
         obj = "indexes"
