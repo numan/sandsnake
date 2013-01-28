@@ -28,7 +28,7 @@ class TestRedisBackend(object):
 
     def test_get_timestamp(self):
         jan_first = datetime.datetime(2012, 01, 01, 12, 0, 0, 0)
-        eq_(1325448000000L, self._backend._get_timestamp(jan_first))
+        eq_(1325419200000L, self._backend._get_timestamp(jan_first))
 
     def _setup_basic_index(self):
         self.obj = "indexes"
