@@ -22,7 +22,7 @@ from nydus.db import create_cluster
 
 from dateutil.parser import parse
 
-import time
+import calendar
 import datetime
 import itertools
 
@@ -318,7 +318,7 @@ class Redis(BaseSunspearBackend):
         """
         returns a unix timestamp representing the ``datetime`` object
         """
-        return long(round(time.time() * 1000))
+        return long((calendar.timegm(dt_obj.utctimetuple()) * 1000)) + (dt_obj.microsecond / 1000)
 
 
 class RedisWithMarker(Redis):
