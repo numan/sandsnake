@@ -359,7 +359,7 @@ class RedisWithMarker(Redis):
         marker_names = map(lambda marker: self._get_index_marker_name(index_name, marker_name=marker), markers)
         results = self._backend.hmget(self._get_obj_markers_name(obj), marker_names)
 
-        parsed_results = [long(result) for result in results]
+        parsed_results = [(None if result is None else long(result)) for result in results]
         if len(parsed_results) == 1:
             return parsed_results[0]
         return parsed_results
@@ -376,7 +376,7 @@ class RedisWithMarker(Redis):
         marker_name = self._get_index_marker_name(index_name)
         result = self._backend.hget(self._get_obj_markers_name(obj), marker_name)
 
-        return 0L if result is None else long(result)
+        return None if result is None else long(result)
 
     def _post_delete_index(self, obj, indexes):
         """

@@ -335,12 +335,12 @@ class TestRedisWithMarkerBackend(object):
             self._backend.add(obj, index_name, "activity_before_" + str(i), published=published - datetime.timedelta(seconds=i))
 
         #adding stuff does not change the default marker
-        eq_(self._backend.get_default_marker(obj, index_name), 0)
+        eq_(self._backend.get_default_marker(obj, index_name), None)
 
         self._backend.get(obj, index_name, marker=published, after=True, limit=3)
 
         #retrieving stuff doesn't either, buy default
-        eq_(self._backend.get_default_marker(obj, index_name), 0)
+        eq_(self._backend.get_default_marker(obj, index_name), None)
 
     def test_get_markers_single_marker(self):
         obj = "indexes"
@@ -366,6 +366,14 @@ class TestRedisWithMarkerBackend(object):
         marker_values = self._backend.get_markers(obj, index_name, markers)
         for marker, marker_value in zip(markers, marker_values):
             eq_(marker_value, marker_names_dict[marker])
+
+    def test_get_markers_multiple_marker_non_existing(self):
+        obj = "indexes"
+        index_name = "profile_index"
+
+        marker_values = self._backend.get_markers(obj, index_name, ["foo", "bar"])
+
+        eq_(marker_values, [None, None])
 
     def test_set_markers_multiple_marker(self):
         obj = "indexes"
