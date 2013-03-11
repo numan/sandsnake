@@ -74,6 +74,38 @@ class Redis(BaseSunspearBackend):
                 if key.startswith(self._prefix):
                     conn.delete(key)
 
+    def get_count(self, obj, index, published, after=False):
+        """
+        Gets the number of items in the index. If ``after`` is ``False``,
+        it gets the number of items in the index less than ``published``.
+
+        If ``after`` is ``True``, it gets the number of items in the index
+        greater than ``published``.
+
+        :type obj: string
+        :param obj: string representation of the object for who the index belongs to
+        :type index: string
+        :param index: the name of the index you want to add the activity to
+        :type published: datetime
+        :param published: the published within the index where we want to start the count
+        :type after: boolean
+        :param after: determins if we are dealing with after or before offset
+
+        :return the number of index items before or after the offset
+        """
+        index_name = self._get_index_name(obj, index)
+        published = self._parse_date(published)
+        timestamp = self._get_timestamp(published)
+
+        if after:
+            start = timestamp
+            end = "+inf"
+        else:
+            start = "-inf"
+            end = timestamp
+
+        return self._backend.zcount(index_name, start, end)
+
     def add(self, obj, index_name, activity, published=None):
         """
         Adds an activity to a index(s) of an object.

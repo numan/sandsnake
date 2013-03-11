@@ -302,6 +302,20 @@ class TestRedisWithMarkerBackend(object):
         markers_hash = self._redis_backend.hgetall(self._backend._get_obj_markers_name(obj))
         eq_({}, markers_hash)
 
+    def test_get_count(self):
+        published = datetime.datetime.now()
+        obj = "indexes"
+        index_name = "profile_index"
+
+        for i in xrange(5):
+            self._backend.add(obj, index_name, "activity_after_" + str(i), published=published + datetime.timedelta(seconds=i))
+
+        for i in xrange(1, 3):
+            self._backend.add(obj, index_name, "activity_before_" + str(i), published=published - datetime.timedelta(seconds=i))
+
+        eq_(3, self._backend.get_count(obj, index_name, published))
+        eq_(5, self._backend.get_count(obj, index_name, published, after=True))
+
     def test_get_before_marker_doesnt_updates_marker(self):
         published = datetime.datetime.now()
         obj = "indexes"
