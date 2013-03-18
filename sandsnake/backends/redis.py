@@ -136,6 +136,24 @@ class Redis(BaseSunspearBackend):
 
         self._post_add(obj, indexes_added, activity, timestamp)
 
+    def remove_values(self, obj, index_name, value):
+        """
+        Deletes activities from an index that belongs to a object
+
+        :type obj: string
+        :param obj: string representation of the object for who the index belongs to
+        :type index_name: string
+        :param index_name: the name of the index you want to delete the values from
+        :type value: string or list
+        :param value: string representation of the value you want to add to the index(s)
+        """
+        values = self._listify(value)
+        index = self._get_index_name(obj, index_name)
+        self._backend.zrem(index, *values)
+
+        for value in values:
+            self._post_remove(obj, [index], value)
+
     def remove(self, obj, index_name, activity):
         """
         Deletes an activity from a index or a list of indexes that belongs to a object

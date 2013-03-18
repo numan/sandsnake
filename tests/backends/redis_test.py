@@ -97,6 +97,65 @@ class TestRedisBackend(object):
         eq_(self._redis_backend.zcard(self._backend._get_index_name(obj, index_names[1])), 1)
         eq_(self._redis_backend.scard(self._backend._get_index_collection_name(obj)), 2)
 
+    def test_remove_values(self):
+        published = datetime.datetime.now()
+        obj = "indexes"
+        index_name = "profile_index"
+
+        values = []
+        for i in xrange(5):
+            value = ("activity_after_" + str(i), published + datetime.timedelta(seconds=i),)
+            self._backend.add(obj, index_name, value[0], published=value[1])
+            values.append(value)
+
+        for i in xrange(1, 3):
+            value = ("activity_before_" + str(i), published - datetime.timedelta(seconds=i),)
+            self._backend.add(obj, index_name, value[0], published=value[1])
+            values.insert(0, value)
+
+        values = map(lambda val: (val[0], self._backend._get_timestamp(val[1])), values)
+
+        eq_(self._redis_backend.zcard(self._backend._get_index_name(obj, index_name)), 7)
+        eq_(self._redis_backend.scard(self._backend._get_index_collection_name(obj)), 1)
+        eq_(self._redis_backend.zrange(self._backend._get_index_name(obj, index_name), 0, -1, withscores=True), values)
+
+        #now delete from the index:
+        self._backend.remove_values(obj, index_name, [values[0][0], values[1][0]])
+
+        eq_(self._redis_backend.zcard(self._backend._get_index_name(obj, index_name)), 5)
+
+    def test_remove_values_that_dont_exist(self):
+        published = datetime.datetime.now()
+        obj = "indexes"
+        index_name = "profile_index"
+
+        values = []
+        for i in xrange(5):
+            value = ("activity_after_" + str(i), published + datetime.timedelta(seconds=i),)
+            self._backend.add(obj, index_name, value[0], published=value[1])
+            values.append(value)
+
+        for i in xrange(1, 3):
+            value = ("activity_before_" + str(i), published - datetime.timedelta(seconds=i),)
+            self._backend.add(obj, index_name, value[0], published=value[1])
+            values.insert(0, value)
+
+        values = map(lambda val: (val[0], self._backend._get_timestamp(val[1])), values)
+
+        eq_(self._redis_backend.zcard(self._backend._get_index_name(obj, index_name)), 7)
+        eq_(self._redis_backend.scard(self._backend._get_index_collection_name(obj)), 1)
+        eq_(self._redis_backend.zrange(self._backend._get_index_name(obj, index_name), 0, -1, withscores=True), values)
+
+        #now delete from the index:
+        self._backend.remove_values(obj, index_name, ['foo', 'bar'])
+
+        eq_(self._redis_backend.zcard(self._backend._get_index_name(obj, index_name)), 7)
+
+        #now delete from the index:
+        self._backend.remove_values(obj, index_name, ['foo', 'bar', values[0][0]])
+
+        eq_(self._redis_backend.zcard(self._backend._get_index_name(obj, index_name)), 6)
+
     def test_remove(self):
         self._setup_basic_index()
 
