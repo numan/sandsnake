@@ -15,7 +15,7 @@ KIND, either express or implied.  See the License for the
 specific language governing permissions and limitations
 under the License.
 """
-from sandsnake.backends.base import BaseSunspearBackend
+from sandsnake.backends.base import BaseSandsnakeBackend
 from sandsnake.exceptions import SandsnakeValidationException
 
 from nydus.db import create_cluster
@@ -27,7 +27,7 @@ import datetime
 import itertools
 
 
-class Redis(BaseSunspearBackend):
+class Redis(BaseSandsnakeBackend):
     def __init__(self, settings, **kwargs):
         nydus_hosts = {}
 
@@ -38,7 +38,8 @@ class Redis(BaseSunspearBackend):
         for i, host in enumerate(hosts):
             nydus_hosts[i] = host
 
-        defaults = settings.get("defaults",
+        defaults = settings.get(
+            "defaults",
             {
                 'host': 'localhost',
                 'port': 6379,
