@@ -6,7 +6,7 @@ setup(
     name="sandsnake",
     license='Apache License 2.0',
     version="0.1.0",
-    description="Manage activity indexes for objects.",
+    description="Sorted indexes backed by redis.",
     long_description=open('README.rst', 'r').read(),
     author="Numan Sachwani",
     author_email="numan856@gmail.com",
