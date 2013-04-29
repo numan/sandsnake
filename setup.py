@@ -5,7 +5,7 @@ from setuptools import setup, find_packages
 setup(
     name="sandsnake",
     license='Apache License 2.0',
-    version="0.1.0",
+    version="0.1.1",
     description="Sorted indexes backed by redis.",
     long_description=open('README.rst', 'r').read(),
     author="Numan Sachwani",

@@ -150,7 +150,8 @@ class Redis(BaseSandsnakeBackend):
         """
         values = self._listify(value)
         index = self._get_index_name(obj, index_name)
-        self._backend.zrem(index, *values)
+        for value in values:
+            self._backend.zrem(index, value)
 
         for value in values:
             self._post_remove(obj, [index], value)
