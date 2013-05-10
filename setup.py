@@ -5,7 +5,7 @@ from setuptools import setup, find_packages
 setup(
     name="sandsnake",
     license='Apache License 2.0',
-    version="0.1.1",
+    version="0.1.2",
     description="Sorted indexes backed by redis.",
     long_description=open('README.rst', 'r').read(),
     author="Numan Sachwani",
@@ -14,7 +14,7 @@ setup(
     packages=find_packages(exclude=['tests']),
     test_suite='nose.collector',
     install_requires=[
-        'nydus>=0.10.5',
+        'nydus>=0.10.6',
         'redis>=2.7.2',
         'python-dateutil==1.5',
     ],
